@@ -8,7 +8,7 @@ params.out_dir = 'output'
 //============================================================================//
 process write_cdhit_clusters {
   tag "$sampleID"
-  publishDir "$params.out_dir/cdhit", mode: "copy"
+  publishDir "$params.out_dir/cdhit/${sampleID_clusters}", mode: "copy"
 
   input:
   tuple sampleID, pr_orfs, nt_orfs, cluster_file, representative_fasta
