@@ -16,7 +16,7 @@ process blast_leader {
   publishDir "$params.out_dir/blast_leader", mode: "copy"
 
   input:
-  tuple sampleID, in_bam, in_fasta
+  tuple sampleID, in_bam_or_junctions, in_fasta
 
   output:
   tuple sampleID, file("${sampleID}_leader.fasta")

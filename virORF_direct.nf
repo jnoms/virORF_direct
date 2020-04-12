@@ -24,6 +24,7 @@ include './bin/modules/cdhit'
 include './bin/modules/annotate_cdhit_representatives'
 include './bin/modules/write_cdhit_clusters'
 include './bin/modules/diamond'
+include './bin/modules/generate_synthetic_transcripts'
 
 //============================================================================//
 // Defining functions
@@ -44,14 +45,46 @@ def sampleID_set_from_infile(input) {
 //============================================================================//
 // Define workflows
 //============================================================================//
-// workflow virORF {
-//
-//   get: input_ch
-//   main:
-//
-// }
+workflow virORF_direct_synthetic {
 
-workflow virORF_direct {
+  get: input_ch
+  main:
+
+  // Mapping reads to reference fasta
+  minimap_sars2(input_ch)
+    .filter{ it[2].size() > 0 }
+    .set{ minimap_sars2_result }
+
+  // Generate synthetic reads
+  generate_synthetic_transcripts(minimap_sars2_result)
+
+  // Only keep reads that contain the leader sequence
+  blast_leader(generate_synthetic_transcripts.out)
+    .filter{ it[1].size() > 0 }
+    .set{ blast_leader_result }
+
+  // Predict ORFs with prodigal
+  prodigal(blast_leader.out) \
+
+  // Generate ORFs
+  blast_leader.out
+    .join(prodigal.out) \
+    | prodigal_to_orfs_direct
+
+  // Run CD-hit and label the representatives
+  cdhit(prodigal_to_orfs_direct.out) \
+    | annotate_cdhit_representatives
+
+  // Write out the clusters into separate fastas
+  prodigal_to_orfs_direct.out
+    .join(cdhit.out) \
+    | write_cdhit_clusters
+
+  // Run cluster representatives through diamond
+  diamond(annotate_cdhit_representatives.out)
+}
+
+workflow virORF_direct_correction {
 
   get: input_ch
   main:
@@ -99,12 +132,12 @@ workflow virORF_direct {
 //============================================================================//
 // Validate inputs
 //============================================================================//
-if( (params.mode != "genome") && (params.mode != "direct") ) {
-  error "params.mode must be set to either 'genome' or 'direct'.\
+if( (params.mode != "synthetic") && (params.mode != "correction") ) {
+  error "params.mode must be set to either 'synthetic' or 'correction'.\
   Current set to ${params.mode}."
 }
 
-if( (params.diamond_database == "") && (params.mode == "direct") ) {
+if( params.diamond_database == "" ) {
   error "params.diamond_database is a required parameter, please enter a path."
 }
 
@@ -114,12 +147,12 @@ if( (params.diamond_database == "") && (params.mode == "direct") ) {
 workflow {
 
   main:
-    if ( params.mode == "genome" ) {
-      input_ch = sampleID_set_from_infile()
-      virORF(input_ch)
+    if ( params.mode == "synthetic" ) {
+      input_ch = sampleID_set_from_infile(params.dRNAseq_reads)
+      virORF_direct_synthetic(input_ch)
     }
     else if ( params.mode == "direct" ) {
      input_ch = sampleID_set_from_infile(params.dRNAseq_reads)
-     virORF_direct(input_ch)
+     virORF_direct_correction(input_ch)
     }
 }
