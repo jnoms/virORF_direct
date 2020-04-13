@@ -8,7 +8,7 @@ params.out_dir = "output"
 //============================================================================//
 process prodigal_to_orfs_direct {
   tag "$sampleID"
-  publishDir "$params.out_dir/prodigal/${sampleID}_orfs", mode: "copy"
+  publishDir "$params.out_dir/prodigal", mode: "copy"
 
   input:
   tuple sampleID, in_fasta, prodigal_file
