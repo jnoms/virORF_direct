@@ -15,16 +15,16 @@ params.log_file = "${workflow.launchDir}/${params.out_dir}/reports/virID.log"
 //============================================================================//
 // Set up modules
 //============================================================================//
-include './bin/modules/minimap_sars2'
-include './bin/modules/blast_leader'
-include './bin/modules/fmlrc'
-include './bin/modules/prodigal'
-include './bin/modules/prodigal_to_orfs_direct'
-include './bin/modules/cdhit'
-include './bin/modules/annotate_cdhit_representatives'
-include './bin/modules/write_cdhit_clusters'
-include './bin/modules/diamond'
-include './bin/modules/generate_synthetic_transcripts'
+include './bin/modules/minimap_sars2' params(params)
+include './bin/modules/blast_leader' params(params)
+include './bin/modules/fmlrc' params(params)
+include './bin/modules/prodigal' params(params)
+include './bin/modules/prodigal_to_orfs_direct' params(params)
+include './bin/modules/cdhit' params(params)
+include './bin/modules/annotate_cdhit_representatives' params(params)
+include './bin/modules/write_cdhit_clusters' params(params)
+include './bin/modules/diamond' params(params)
+include './bin/modules/generate_synthetic_transcripts' params(params)
 
 //============================================================================//
 // Defining functions
