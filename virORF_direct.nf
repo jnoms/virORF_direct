@@ -151,7 +151,7 @@ workflow {
       input_ch = sampleID_set_from_infile(params.dRNAseq_reads)
       virORF_direct_synthetic(input_ch)
     }
-    else if ( params.mode == "direct" ) {
+    else if ( params.mode == "correction" ) {
      input_ch = sampleID_set_from_infile(params.dRNAseq_reads)
      virORF_direct_correction(input_ch)
     }
