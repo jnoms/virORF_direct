@@ -61,7 +61,7 @@ def read_genome_fasta(path):
 def get_junctions(cigar, start, min_intron_length=100):
     """
     This function reads in a cigar sequence and outputs all junctions
-    (maked with N (deletion) or I (insertion)) that are at least the
+    (maked with N (deletion) or N (intron)) that are at least the
     required length. The junction position is based on the start
     position, meaning it is syncronized with the genome.
 
