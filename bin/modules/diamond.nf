@@ -18,16 +18,16 @@ process diamond {
   memory "10G"
 
   input:
-  tuple sampleID, sequences
+  tuple sampleID, pr_fasta, nt_fasta
 
   output:
-  tuple sampleID, file("*_diamond.out")
+  tuple sampleID, file("${sampleID}_diamond.out")
 
   script:
   """
   $workflow.projectDir/bin/bash/diamond.sh \
   -d ${params.diamond_database} \
-  -q ${sequences} \
+  -q ${pr_fasta} \
   -o ${sampleID}_diamond.out \
   -m ${task.memory.toGiga()} \
   -t ${params.diamond_temp_dir} \

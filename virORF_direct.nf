@@ -1,30 +1,17 @@
 #!/usr/bin/env nextflow
-
 nextflow.preview.dsl=2
-
-// Log file must be set here to access laucnhDir information
-params.log_file = "${workflow.launchDir}/${params.out_dir}/reports/virID.log"
-
-// Require nextflow version 19.10 or higher
-// if( !nextflow.version.matches('20.00+') ) {
-//     println "This workflow requires Nextflow version 19.10 or greater -- You \
-//     are running version $nextflow.version"
-//     exit 1
-// }
 
 //============================================================================//
 // Set up modules
 //============================================================================//
 include './bin/modules/minimap_sars2' params(params)
 include './bin/modules/blast_leader' params(params)
-include './bin/modules/fmlrc' params(params)
 include './bin/modules/prodigal' params(params)
 include './bin/modules/prodigal_to_orfs_direct' params(params)
-include './bin/modules/cdhit' params(params)
-include './bin/modules/annotate_cdhit_representatives' params(params)
-include './bin/modules/write_cdhit_clusters' params(params)
 include './bin/modules/diamond' params(params)
 include './bin/modules/generate_synthetic_transcripts' params(params)
+include './bin/modules/parse_orf_assignments' params(params)
+include './bin/modules/find_trs_sites' params(params)
 
 //============================================================================//
 // Defining functions
@@ -71,72 +58,19 @@ workflow virORF_direct_synthetic {
     .join(prodigal.out) \
     | prodigal_to_orfs_direct
 
-  // Run CD-hit and label the representatives
-  cdhit(prodigal_to_orfs_direct.out) \
-    | annotate_cdhit_representatives
+  // Run protein ORFs through diamond
+  diamond(prodigal_to_orfs_direct.out)
 
-  // Write out the clusters into separate fastas
-  prodigal_to_orfs_direct.out
-    .join(cdhit.out) \
-    | write_cdhit_clusters
+  // Parse the diamond output file
+  parse_orf_assignments(diamond.out)
 
-  // Run cluster representatives through diamond
-  diamond(annotate_cdhit_representatives.out)
-}
-
-workflow virORF_direct_correction {
-
-  get: input_ch
-  main:
-
-  // Mapping reads to reference fasta
-  minimap_sars2(input_ch)
-    .filter{ it[2].size() > 0 }
-    .set{ minimap_sars2_result }
-
-  // Only keep reads that contain the leader sequence
-  blast_leader(minimap_sars2_result)
-    .filter{ it[1].size() > 0 }
-    .set{ blast_leader_result }
-
-  // Read in short reads as a channel, and mix them with blast_leader_result
-  short_reads = Channel.fromPath(params.short_reads)
-  blast_leader_result
-    .combine(short_reads)
-    .set{ long_and_short_reads }
-
-  // Correct reads with fmlrc
-  fmlrc(long_and_short_reads)
-
-  // Predict ORFs with prodigal
-  prodigal(fmlrc.out) \
-
-  // Generate ORFs
-  fmlrc.out
-    .join(prodigal.out) \
-    | prodigal_to_orfs_direct
-
-  // Run CD-hit and label the representatives
-  cdhit(prodigal_to_orfs_direct.out) \
-    | annotate_cdhit_representatives
-
-  // Write out the clusters into separate fastas
-  prodigal_to_orfs_direct.out
-    .join(cdhit.out) \
-    | write_cdhit_clusters
-
-  // Run cluster representatives through diamond
-  diamond(annotate_cdhit_representatives.out)
+  // Find TRS sequences from the junctions
+  find_trs_sites(generate_synthetic_transcripts.out)
 }
 
 //============================================================================//
 // Validate inputs
 //============================================================================//
-if( (params.mode != "synthetic") && (params.mode != "correction") ) {
-  error "params.mode must be set to either 'synthetic' or 'correction'.\
-  Current set to ${params.mode}."
-}
-
 if( params.diamond_database == "" ) {
   error "params.diamond_database is a required parameter, please enter a path."
 }
@@ -147,12 +81,6 @@ if( params.diamond_database == "" ) {
 workflow {
 
   main:
-    if ( params.mode == "synthetic" ) {
-      input_ch = sampleID_set_from_infile(params.dRNAseq_reads)
-      virORF_direct_synthetic(input_ch)
-    }
-    else if ( params.mode == "correction" ) {
-     input_ch = sampleID_set_from_infile(params.dRNAseq_reads)
-     virORF_direct_correction(input_ch)
-    }
+    input_ch = sampleID_set_from_infile(params.dRNAseq_reads)
+    virORF_direct_synthetic(input_ch)
 }
