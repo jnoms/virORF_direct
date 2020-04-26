@@ -84,3 +84,24 @@ conda env export > virORF_direct.yml
 conda deactivate
 ```
 And then specify the path to virORF_direct.yml in the "conda" process setting of nextflow.config.
+
+## Description of tab-delimited output files  
+I'll only highlight the tab-delimited files which can be plotted. The outputs after each step are by default transfered to the output directory - this includes the minimap2 bam, the coordinate-derived transcripts, and so on.  
+
+### generate_synthetic_transcripts.py  
+**${sampleID}_junctions.tsv:** Each line is a junction. Has the read_name, the 5' junction location, and the 3' junction location. In the rare cases that there are multiple junctions for a single transcript, they'll end up on different lines.  
+
+### find_trs_sites.py  
+**${sampleID}_TRS_sites.tsv:**  Has the top N homology (TRS) sequences between the 5' and 3' regions of each junction by category. More detail is present in the manuscript methods, and in the find_trs_sites.py -h information.  
+
+### parse_orf_assignments.py  
+**${sampleID}_subject_starts_and_ends.tsv:** This contains the predicted start and stop positions of each query ORF based on their alignment starts and stops against cannonical proteins. So, this is  *protein level* information of all variant and canonical ORFs. This output file also gives information on any ORF fusions, if applicable.  
+
+**${sampleID}_total_ORF_counts.tsv:** This file contains total counts for a given ORF. This does NOT consider whether the ORF is canonical or variant. This DOES include all unannotated ORFs.  
+
+**${sampleID}_fiveprime-most-orf_counts.tsv:** This file lists the number of transcripts which contain each cannonical and variant ORF as the most 5' ORF. Does include unannotated ORFs.  
+
+**${sampleID}_cannonical_vs_variant_counts.tsv:** This file contains total counts for variant vs canonical ORFs. This does NOT include unannotated ORFs.  
+
+**${sampleID}_cannonical_vs_variant_startsites.tsv:** This file contains transcript ORF start and end sites for variant vs canonical ORFs. So, this is the nucleotide start and end points for each ORF on each transcript. This does not include unannotated ORFs.  
+
