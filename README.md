@@ -23,10 +23,11 @@ This pipeline automatically uses the Conda package manager to handle all softwar
 3. Select or configure profile in nextflow.config:
     - The profile o2_slurm is set up to run virORF_direct in a linux environment using the slurm scheduler.
     - To change the scheduler, alter the "executor" to the desired scheduler.
-    - You may also need to change the beforeScript depending on your cluster requirements. It is currently set to load conda at my institution's cluster. 
+    - You may also need to change the `beforeScript` depending on your cluster requirements. It is currently set to load conda at my institution's cluster. 
     - The profile o2_local runs this script in a linux environment locally.
     - The profile mac runs this script locally on a mac.
-    - To run virORF_direct with the selected profile, will use the -profile switch upon running this pipeline.
+    - To run virORF_direct with the selected profile, will use the `-profile` switch upon running this pipeline.
+    - Finally, you also need to change the Conda `cacheDir` in the profile you're using to be a path to the directory you want the Conda environment to be saved to. This way, the Conda environment will only need to be downloaded once. You can also exclude this switch, in which case the Conda environment will be downloaded to your working directory.  
 4. Run this pipeline. Switches can be entered on the command line and/or set in nextflow config. To run:
 ```
 nextflow run virORF_direct.nf \
