@@ -6,17 +6,17 @@ This repository and pipeline is sufficient to reproduce the work reported in the
 
 The purpose of this pipeline is to process direct RNA sequencing (dRNAseq) reads from SARS-CoV-2-infected cells. This script maps the reads against the SARS-CoV-2 genome and generates coordinate-derived transcripts and junction coordinates from these alignments. 
 
-Coordinate-derived transcripts are used to characterize the viral open reading frames (ORFs) present in the input dRNAseq transcriptome. ORFs are predicted from each coordinate-derived transcript using prodigal, prodigal ORFs are processed to generate protein sequences, and these protein sequences are mapped against annotated and predicted SARS-CoV-2 proteins using the DIAMOND aligner. This pipeline then incorporates a script to process the resultant DIAMOND alignments into a series out output files which can be visualized as desired. In addition, this pipeline predicts common TRS sequences from the junction coordinates generated at the coordinate-derived transcripts generation step.
+Coordinate-derived transcripts are used to characterize the viral open reading frames (ORFs) present in the input dRNAseq transcriptome. ORFs are predicted from each coordinate-derived transcript using prodigal, prodigal ORFs are processed to generate protein sequences, and these protein sequences are mapped against annotated and predicted SARS-CoV-2 proteins using the DIAMOND aligner. This pipeline then incorporates a script to process the resultant DIAMOND alignments into a series of output files which can be visualized as desired. In addition, this pipeline predicts common TRS sequences from the junction coordinates generated at the coordinate-derived transcripts generation step.
 
 R-markdown files used to generate the figures present in the manuscript [...] are present in bin/R and are not run automatically.
 
 All python and bash scripts can be run independently. Execute any python script (with -h) or bash script (without arguments) for detailed instructions on how to run them.
 
-This pipeline automatically uses the Conda package manager to handle all software depencies besides Nextflow and Conda itself. Any process that can be run in parallel will automatically be run in parallel by this pipeline. As long as the "executor" is configured in the nextflow.config file, nextflow will also automatically handle submitting jobs to the executor (i.e. slurm). 
+This pipeline automatically uses the Conda package manager to handle all software depencies besides Nextflow and Conda itself. Any process that can be run in parallel will automatically be run in parallel by this pipeline. As long as the "executor" is configured in the nextflow.config file, Nextflow will also automatically handle submitting jobs to the executor (i.e. slurm). 
 
 ## Quickstart
-1. Download version 19.10 or higher. Nextflow can be downloaded by running ```curl -s https://get.nextflow.io | bash``` , which makes the nextflow executible in your working directory. See https://www.nextflow.io/ for more information.
-2. If necessary, download Conda. Miniconda can be downloaded [here](https://docs.conda.io/en/latest/miniconda.html). **This pipeline handles all software dependencies besides nextflow and conda automatically using a conda enviornment.**
+1. Download Nextflow version 19.10 or higher. Nextflow can be downloaded by running ```curl -s https://get.nextflow.io | bash``` , which makes the nextflow executible in your working directory. See https://www.nextflow.io/ for more information.
+2. If necessary, download Conda. Miniconda can be downloaded [here](https://docs.conda.io/en/latest/miniconda.html). **This pipeline handles all software dependencies besides Nextflow and Conda itself automatically using a conda enviornment.**
 2. Enter essential parameters to nextflow.config:
     - dRNAseq_reads: Path to the direct RNAseq reads, in fasta or fastq format.
     - You may want to alter other paremeters (described below), but there are sensible defaults in nextflow.config.
@@ -35,7 +35,7 @@ nextflow run virORF_direct.nf \
 -profile o2_slurm \
 -resume
 ```
-The `-resume` switch lets you resume this pipeline from the last finished step. The -profile switch should be set to whatever profile you decided was appropriate. The SARS-CoV-2 reference genome and leader sequence are provided in this repository, as are conda yml files.
+The `-resume` switch lets you resume this pipeline from the last finished step. The `-profile` switch should be set to whatever profile you decided was appropriate based on your machine or cluster. The SARS-CoV-2 reference genome, leader sequence, and diamond database are provided in this repository and coded into the nextflow.config (or you can use your own), as are conda yml files.
 
 ## Description of Parameters present in nextflow.config.
 
@@ -60,7 +60,7 @@ The `-resume` switch lets you resume this pipeline from the last finished step. 
 **prodigal_closed_edges:** If set to 0, allows ORFs to "run in" off the edge - i.e. the ORF doesn't need a start codon if it's close to the start of the sequence. If 1, it requires a start codon. `1`  
 
 ### DIAMOND alignment  
-**diamond_database:** Path to the diamond database. A diamond database containing canonical and predicted SARS-CoV-2 proteins is included with this repository. `baseDir/resources/sars_cov2_cannonical_and_virORFsense_ORF1_split.dmnd`  
+**diamond_database:** Path to the diamond database. A diamond database containing canonical and predicted SARS-CoV-2 proteins is included with this repository. `$baseDir/resources/sars_cov2_cannonical_and_virORFsense_ORF1_split.dmnd`  
 **diamond_outfmt:** The output format to use when calling diamond. You can add output fields on, but probably removing them might break things. `"6 qseqid qlen sseqid evalue bitscore pident length qstart qend sstart send"`  
 **diamond_temp_dir:** Temporary directory for diamond to use. `temp`  
 **diamond_evalue:** The minimum evalue for an alignment for diamond to report out. I set this at 10 because downstream scripts filter at percent identity instead. `10`   
@@ -74,3 +74,13 @@ The `-resume` switch lets you resume this pipeline from the last finished step. 
 **ref_fasta:** Provided. `$baseDir/resources/sars_cov2_NC_045512.2_genome.fasta`  
 **TRS_proximal_sequence:** Amount of sequence to consider on either side of each junction point. For example, an entry of 30 means it will look for 15 bases on either side of the 5' and 3' junctions, and compare those two 30 base sequences to find the homologous sequence. This must be even. `30`  
 **TRS_top:** The top N TRS' for each category to output. `2`  
+
+## Note on Conda
+There is a linux and mac conda yml programmed into the config file and provided in this repository. The linux yml is used for o2_local and o2_slurm profiles, while the mac yml is used for the mac profile. If for some reason the enviornment specified by either of these ymls does not work on your machine, you can generate a machine-specific conda yml by running
+```
+conda create --name virORF_direct jupyter biopython prodigal pathlib pandas blast diamond minimap2 samtools ete3 pysam seqtk
+conda activate virORF_direct
+conda env export > virORF_direct.yml
+conda deactivate
+```
+And then specify the path to virORF_direct.yml in the "conda" process setting of nextflow.config.
