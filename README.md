@@ -72,7 +72,6 @@ The `-resume` switch lets you resume this pipeline from the last finished step. 
 **parse_orf_assignments_min_ok_nterm_extension:** The allowable amount of additional sequence allowed at the N terminus of an alignment for it to still be called canonical. This addresses situations where prodigal calls a truly canonical ORF from an upstream nTG, while the DIAMOND database has it form it's downstream ATG, and we don't want to call it variant by mistake. A setting of 20 allows 20 additional amino acids to the N-terminus of the query to still consider the query canonical. `20`  
 
 ### Predicting TRS sequences  
-**ref_fasta:** Provided. `$baseDir/resources/sars_cov2_NC_045512.2_genome.fasta`  
 **TRS_proximal_sequence:** Amount of sequence to consider on either side of each junction point. For example, an entry of 30 means it will look for 15 bases on either side of the 5' and 3' junctions, and compare those two 30 base sequences to find the homologous sequence. This must be even. `30`  
 **TRS_top:** The top N TRS' for each category to output. `2`  
 
