@@ -40,6 +40,7 @@ The `-resume` switch lets you resume this pipeline from the last finished step. 
 ## Description of Parameters present in nextflow.config.
 
 ### General parameters  
+**dRNAseq_reads:** Path to the direct RNAseq reads in **fasta** or **fastq** format. Even if you only have one input file, this should include at least one glob! `input/*fastq`  
 **out_dir:** The directory that will contain the output files.  
 **ref_fasta:** Path to the reference fasta containing the SARS-CoV-2 reference genome. This is included with this repository at resources/sars_cov2_NC_045512.2_genome.fasta and is programmed in to the config file. `$baseDir/resources/sars_cov2_NC_045512.2_genome.fasta`  
 
