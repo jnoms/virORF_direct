@@ -1,0 +1,924 @@
+---
+title: "SARS-CoV-2: Visualization of long-read ORFs"
+output: html_notebook
+---
+
+# Load libraries
+```{r}
+library(tidyverse)
+library(scales) #allows use of "comma" to replace i.e. 1e6 with 1,000,000 during plotting
+
+library(pheatmap)
+library(patchwork) # allows composing/orienting plots
+library(RColorBrewer)
+```
+
+# Import data
+```{r}
+
+# Synthetic data
+#---------------------------------------------#
+# Variant counts and start sites
+taiaroa_var_counts <- read_delim("synthetic/output_dataframes/taiaroa_cannonical_vs_variant_counts_SYNTHETIC.tsv", delim="\t")
+kim_var_counts <- read_delim("synthetic/output_dataframes/kim_cannonical_vs_variant_counts_SYNTHETIC.tsv", delim="\t")
+davidson_var_counts <- read_delim("synthetic/output_dataframes/davidson_cannonical_vs_variant_counts_SYNTHETIC.tsv", delim="\t")
+
+taiaroa_var_startsites <- read_delim("synthetic/output_dataframes/taiaroa_cannonical_vs_variant_startsites_SYNTHETIC.tsv", delim="\t")
+kim_var_startsites <- read_delim("synthetic/output_dataframes/kim_cannonical_vs_variant_startsites_SYNTHETIC.tsv", delim="\t")
+davidson_var_startsites <- read_delim("synthetic/output_dataframes/davidson_cannonical_vs_variant_startsites_SYNTHETIC.tsv", delim="\t")
+
+# SHORT READ data
+#---------------------------------------------#
+# Variant counts and start sites
+taiaroa_var_counts_SHORT_READ <- read_delim("short_reads/output_dataframes/taiaroa_cannonical_vs_variant_counts_SHORTREAD.tsv", delim="\t")
+kim_var_counts_SHORT_READ <- read_delim("short_reads/output_dataframes/kim_cannonical_vs_variant_counts_SHORTREAD.tsv", delim="\t")
+davidson_var_counts_SHORT_READ <- read_delim("short_reads/output_dataframes/davidson_cannonical_vs_variant_counts_SHORTREAD.tsv", delim="\t")
+
+taiaroa_var_startsites_SHORT_READ <- read_delim("short_reads/output_dataframes/taiaroa_cannonical_vs_variant_startsites_SHORTREAD.tsv", delim="\t")
+kim_var_startsites_SHORT_READ <- read_delim("short_reads/output_dataframes/kim_cannonical_vs_variant_startsites_SHORTREAD.tsv", delim="\t")
+davidson_var_startsites_SHORT_READ <- read_delim("short_reads/output_dataframes/davidson_cannonical_vs_variant_startsites_SHORTREAD.tsv", delim="\t")
+```
+
+
+# Plot variant counts
+```{r}
+
+# Define order
+variant_cannnonical_listed_in_order <- c("ORF1a", "ORF1a_variant", "ORF1b", "ORF1b_variant", "S", "S_variant", "ORF3a", "ORF3a_variant", "E", "E_variant", "M", "M_variant", "ORF6", "ORF6_variant", "ORF7a", "ORF7a_variant", "ORF7b", "ORF7b_variant", "ORF8", "ORF8_variant", "N", "N_variant", "ORF10", "ORF10_variant")
+
+
+# taiaroa
+#--------------------#
+
+# Need to get order for the ORFs that are present in davidson...
+# This is because not all samples will have all variants and such.
+variant_cannnonical_listed_in_order_taiaroa <- variant_cannnonical_listed_in_order[variant_cannnonical_listed_in_order %in% taiaroa_var_counts$ORF]
+
+# Now, actually get the sample order for plotting
+# Because of the coord flip in the plot, need to reverse the order.
+taiaroa_order <- match(taiaroa_var_counts$ORF, rev(variant_cannnonical_listed_in_order_taiaroa))
+
+# Add a column that details if the ORF is cannonical or variant
+taiaroa_var_counts <- taiaroa_var_counts %>%
+  mutate(orf_type = ifelse(grepl("variant",ORF), "Variant", "Cannonical"))
+
+# Plotting
+taiaroa_var_counts_plt <- ggplot(data=taiaroa_var_counts, aes(x=reorder(ORF, taiaroa_order), y=Counts)) +
+  geom_col(aes(fill=orf_type)) +
+  coord_flip() +
+  theme_minimal() +
+  scale_fill_manual(values = c("#2471A3", "#A93226")) +
+  theme(legend.position = "none",
+        panel.grid.minor = element_blank(),
+        axis.text.y= element_text(size=7)) +
+  xlab("ORF") + ylab("Count") +
+  scale_y_continuous(labels = comma) +
+  scale_x_discrete(limits=rev(variant_cannnonical_listed_in_order))
+taiaroa_var_counts_plt
+
+# Kim
+#--------------------#
+
+# Need to get order for the ORFs that are present in davidson...
+# This is because not all samples will have all variants and such.
+variant_cannnonical_listed_in_order_kim <- variant_cannnonical_listed_in_order[variant_cannnonical_listed_in_order %in% kim_var_counts$ORF]
+
+# Now, actually get the sample order for plotting
+# Because of the coord flip in the plot, need to reverse the order.
+kim_order <- match(kim_var_counts$ORF, rev(variant_cannnonical_listed_in_order_kim))
+
+# Add a column that details if the ORF is cannonical or variant
+kim_var_counts <- kim_var_counts %>%
+  mutate(orf_type = ifelse(grepl("variant",ORF), "Variant", "Cannonical"))
+
+# Plotting
+kim_var_counts_plt <- ggplot(data=kim_var_counts, aes(x=reorder(ORF, kim_order), y=Counts)) +
+  geom_col(aes(fill=orf_type)) +
+  coord_flip() +
+  theme_minimal() +
+  scale_fill_manual(values = c("#2471A3", "#A93226")) +
+  theme(legend.position = "none",
+        panel.grid.minor = element_blank(),
+        axis.text.y= element_text(size=7)) +
+  xlab("ORF") + ylab("Count") +
+  scale_y_continuous(labels = comma) +
+  scale_x_discrete(limits=rev(variant_cannnonical_listed_in_order))
+kim_var_counts_plt
+
+
+# Davidson
+#--------------------#
+
+# Need to get order for the ORFs that are present in davidson...
+# This is because not all samples will have all variants and such.
+variant_cannnonical_listed_in_order_davidson <- variant_cannnonical_listed_in_order[variant_cannnonical_listed_in_order %in% davidson_var_counts$ORF]
+
+# Now, actually get the sample order for plotting
+# Because of the coord flip in the plot, need to reverse the order.
+davidson_order <- match(davidson_var_counts$ORF, rev(variant_cannnonical_listed_in_order_davidson))
+
+# Add a column that details if the ORF is cannonical or variant
+davidson_var_counts <- davidson_var_counts %>%
+  mutate(orf_type = ifelse(grepl("variant",ORF), "Variant", "Cannonical"))
+
+# Plotting
+davidson_var_counts_plt <- ggplot(data=davidson_var_counts, aes(x=reorder(ORF, davidson_order), y=Counts)) +
+  geom_col(aes(fill=orf_type)) +
+  coord_flip() +
+  theme_minimal() +
+  scale_fill_manual(values = c("#2471A3", "#A93226")) +
+  theme(legend.position = "none",
+        panel.grid.minor = element_blank(),
+        axis.text.y= element_text(size=7)) +
+  xlab("ORF") + ylab("Count") +
+  scale_y_continuous(labels = comma) +
+  scale_x_discrete(limits=rev(variant_cannnonical_listed_in_order))
+davidson_var_counts_plt
+
+```
+
+# Plot variant start sites
+```{r}
+
+
+
+
+# Taiaroa
+#--------------------#
+
+# Need to regenerate order for every single line (the many transcripts)
+taiaroa_order_startsites <- match(taiaroa_var_startsites$subject, rev(variant_cannnonical_listed_in_order_taiaroa))
+
+# Add information on variant or not
+taiaroa_var_startsites <- taiaroa_var_startsites %>%
+  mutate(orf_type = ifelse(grepl("variant",subject), "Variant", "Cannonical"))
+
+taiaroa_var_startsites_plt <- ggplot(data=taiaroa_var_startsites, aes(x=reorder(subject, taiaroa_order_startsites), y=start)) + 
+  geom_boxplot(outlier.shape = NA, aes(fill=orf_type)) +
+  coord_flip() +
+  scale_y_continuous(labels = comma, limits = c(1, 5000)) +
+  theme_minimal() +
+  scale_fill_manual(values = c("#2471A3", "#A93226")) +
+  theme(legend.position = "none",
+        panel.grid.minor = element_blank(),
+        axis.text.y= element_text(size=7)) +
+  xlab("ORF") + ylab("Start Site on Transcript") +
+  scale_x_discrete(limits=rev(variant_cannnonical_listed_in_order))
+taiaroa_var_startsites_plt
+
+# Kim
+#--------------------#
+
+# Need to regenerate order for every single line (the many transcripts)
+kim_order_startsites <- match(kim_var_startsites$subject, rev(variant_cannnonical_listed_in_order_kim))
+
+# Add information on variant or not
+kim_var_startsites <- kim_var_startsites %>%
+  mutate(orf_type = ifelse(grepl("variant",subject), "Variant", "Cannonical"))
+
+kim_var_startsites_plt <- ggplot(data=kim_var_startsites, aes(x=reorder(subject, kim_order_startsites), y=start)) + 
+  geom_boxplot(outlier.shape = NA, aes(fill=orf_type)) +
+  coord_flip() +
+  scale_y_continuous(labels = comma, limits = c(1, 5000)) +
+  theme_minimal() +
+  scale_fill_manual(values = c("#2471A3", "#A93226")) +
+  theme(legend.position = "none",
+        panel.grid.minor = element_blank(),
+        axis.text.y= element_text(size=7)) +
+  xlab("ORF") + ylab("Start Site on Transcript") +
+  scale_x_discrete(limits=rev(variant_cannnonical_listed_in_order))
+kim_var_startsites_plt
+
+# Davidson
+#--------------------#
+
+# Need to regenerate order for every single line (the many transcripts)
+davidson_order_startsites <- match(davidson_var_startsites$subject, rev(variant_cannnonical_listed_in_order_davidson))
+
+# Add information on variant or not
+davidson_var_startsites <- davidson_var_startsites %>%
+  mutate(orf_type = ifelse(grepl("variant",subject), "Variant", "Cannonical"))
+
+davidson_var_startsites_plt <- ggplot(data=davidson_var_startsites, aes(x=reorder(subject, davidson_order_startsites), y=start)) + 
+  geom_boxplot(outlier.shape = NA, aes(fill=orf_type)) +
+  coord_flip() +
+  scale_y_continuous(labels = comma, limits = c(1, 5000)) +
+  theme_minimal() +
+  scale_fill_manual(values = c("#2471A3", "#A93226")) +
+  theme(legend.position = "none",
+        panel.grid.minor = element_blank(),
+        axis.text.y= element_text(size=7)) +
+  xlab("ORF") + ylab("Start Site on Transcript") +
+  scale_x_discrete(limits=rev(variant_cannnonical_listed_in_order))
+davidson_var_startsites_plt
+
+```
+
+# Assembling counts and start sites
+```{r}
+
+# this is tall version
+counts_and_startsites_plt_TALL <- (taiaroa_var_counts_plt + taiaroa_var_startsites_plt +
+   theme(axis.title.y=element_blank(),
+                              axis.text.y=element_blank(),
+                              plot.title = element_blank())) /
+  (kim_var_counts_plt + kim_var_startsites_plt +
+     theme(axis.title.y=element_blank(),
+                              axis.text.y=element_blank(),
+                              plot.title = element_blank())) /
+  (davidson_var_counts_plt + davidson_var_startsites_plt +
+     theme(axis.title.y=element_blank(),
+                              axis.text.y=element_blank(),
+                              plot.title = element_blank()))
+
+# This is WIDE version...
+top <- taiaroa_var_counts_plt +
+  kim_var_counts_plt +
+   theme(axis.title.y=element_blank(),
+         axis.text.y=element_blank(),
+         plot.title = element_blank()) + 
+  davidson_var_counts_plt +
+   theme(axis.title.y=element_blank(),
+         axis.text.y=element_blank(),
+         plot.title = element_blank())
+
+bottom <- taiaroa_var_startsites_plt +
+  kim_var_startsites_plt +
+   theme(axis.title.y=element_blank(),
+         axis.text.y=element_blank(),
+         plot.title = element_blank()) + 
+  davidson_var_startsites_plt +
+   theme(axis.title.y=element_blank(),
+         axis.text.y=element_blank(),
+         plot.title = element_blank())
+
+counts_and_startsites_plt_WIDE <- top/bottom
+
+
+ggsave("figure2_ORFS.pdf", counts_and_startsites_plt_WIDE, width = 30, height=15, units="cm")
+ggsave("figure2_ORFS.svg", counts_and_startsites_plt_WIDE, width = 30, height=15, units="cm")
+```
+
+
+# REPEATING FOR THE SHORT-READ CORRECTED DATA...
+#
+#
+# Plot variant counts
+```{r}
+
+# Define order
+variant_cannnonical_listed_in_order <- c("ORF1a", "ORF1a_variant", "ORF1ab", "ORF1ab_variant", "S", "S_variant", "ORF3a", "ORF3a_variant", "E", "E_variant", "M", "M_variant", "ORF6", "ORF6_variant", "ORF7a", "ORF7a_variant", "ORF7b", "ORF7b_variant", "ORF8", "ORF8_variant", "N", "N_variant", "ORF10", "ORF10_variant")
+
+
+# taiaroa
+#--------------------#
+
+# Need to get order for the ORFs that are present in davidson...
+# This is because not all samples will have all variants and such.
+variant_cannnonical_listed_in_order_taiaroa_SHORT_READ <- variant_cannnonical_listed_in_order[variant_cannnonical_listed_in_order %in% taiaroa_var_counts_SHORT_READ$ORF]
+
+# Now, actually get the sample order for plotting
+# Because of the coord flip in the plot, need to reverse the order.
+taiaroa_order_SHORT_READ <- match(taiaroa_var_counts_SHORT_READ$ORF, rev(variant_cannnonical_listed_in_order_taiaroa_SHORT_READ))
+
+# Add a column that details if the ORF is cannonical or variant
+taiaroa_var_counts_SHORT_READ <- taiaroa_var_counts_SHORT_READ %>%
+  mutate(orf_type = ifelse(grepl("variant",ORF), "Variant", "Cannonical"))
+
+# Plotting
+taiaroa_var_counts_plt_SHORT_READ <- ggplot(data=taiaroa_var_counts_SHORT_READ, aes(x=reorder(ORF, taiaroa_order_SHORT_READ), y=Counts)) +
+  geom_col(aes(fill=orf_type)) +
+  coord_flip() +
+  theme_minimal() +
+  scale_fill_manual(values = c("#2471A3", "#A93226")) +
+  theme(legend.position = "none",
+        panel.grid.minor = element_blank(),
+        axis.text.y= element_text(size=5)) +
+  xlab("ORF") + ylab("Count") +
+  scale_y_continuous(labels = comma) +
+  scale_x_discrete(limits=rev(variant_cannnonical_listed_in_order))
+taiaroa_var_counts_plt_SHORT_READ
+
+# Kim
+#--------------------#
+
+# Need to get order for the ORFs that are present in davidson...
+# This is because not all samples will have all variants and such.
+variant_cannnonical_listed_in_order_kim_SHORT_READ <- variant_cannnonical_listed_in_order[variant_cannnonical_listed_in_order %in% kim_var_counts_SHORT_READ$ORF]
+
+# Now, actually get the sample order for plotting
+# Because of the coord flip in the plot, need to reverse the order.
+kim_order_SHORT_READ <- match(kim_var_counts_SHORT_READ$ORF, rev(variant_cannnonical_listed_in_order_kim_SHORT_READ))
+
+# Add a column that details if the ORF is cannonical or variant
+kim_var_counts_SHORT_READ <- kim_var_counts_SHORT_READ %>%
+  mutate(orf_type = ifelse(grepl("variant",ORF), "Variant", "Cannonical"))
+
+# Plotting
+kim_var_counts_plt_SHORT_READ <- ggplot(data=kim_var_counts_SHORT_READ, aes(x=reorder(ORF, kim_order_SHORT_READ), y=Counts)) +
+  geom_col(aes(fill=orf_type)) +
+  coord_flip() +
+  theme_minimal() +
+  scale_fill_manual(values = c("#2471A3", "#A93226")) +
+  theme(legend.position = "none",
+        panel.grid.minor = element_blank(),
+        axis.text.y= element_text(size=5)) +
+  xlab("ORF") + ylab("Count") +
+  scale_y_continuous(labels = comma) +
+  scale_x_discrete(limits=rev(variant_cannnonical_listed_in_order))
+kim_var_counts_plt_SHORT_READ
+
+
+# Davidson
+#--------------------#
+
+# Need to get order for the ORFs that are present in davidson...
+# This is because not all samples will have all variants and such.
+variant_cannnonical_listed_in_order_davidson_SHORT_READ <- variant_cannnonical_listed_in_order[variant_cannnonical_listed_in_order %in% davidson_var_counts_SHORT_READ$ORF]
+
+# Now, actually get the sample order for plotting
+# Because of the coord flip in the plot, need to reverse the order.
+davidson_order_SHORT_READ <- match(davidson_var_counts_SHORT_READ$ORF, rev(variant_cannnonical_listed_in_order_davidson_SHORT_READ))
+
+# Add a column that details if the ORF is cannonical or variant
+davidson_var_counts_SHORT_READ <- davidson_var_counts_SHORT_READ %>%
+  mutate(orf_type = ifelse(grepl("variant",ORF), "Variant", "Cannonical"))
+
+# Plotting
+davidson_var_counts_plt_SHORT_READ <- ggplot(data=davidson_var_counts_SHORT_READ, aes(x=reorder(ORF, davidson_order_SHORT_READ), y=Counts)) +
+  geom_col(aes(fill=orf_type)) +
+  coord_flip() +
+  theme_minimal() +
+  scale_fill_manual(values = c("#2471A3", "#A93226")) +
+  theme(legend.position = "none",
+        panel.grid.minor = element_blank(),
+        axis.text.y= element_text(size=5)) +
+  xlab("ORF") + ylab("Count") +
+  scale_y_continuous(labels = comma) +
+  scale_x_discrete(limits=rev(variant_cannnonical_listed_in_order))
+davidson_var_counts_plt_SHORT_READ
+
+```
+
+# Plot variant start sites
+```{r}
+
+# Taiaroa
+#--------------------#
+
+# Need to regenerate order for every single line (the many transcripts)
+taiaroa_order_startsites_SHORT_READ <- match(taiaroa_var_startsites_SHORT_READ$subject, rev(variant_cannnonical_listed_in_order_taiaroa_SHORT_READ))
+
+# Add information on variant or not
+taiaroa_var_startsites_SHORT_READ <- taiaroa_var_startsites_SHORT_READ %>%
+  mutate(orf_type = ifelse(grepl("variant",subject), "Variant", "Cannonical"))
+
+taiaroa_var_startsites_plt_SHORT_READ <- ggplot(data=taiaroa_var_startsites_SHORT_READ, aes(x=reorder(subject, taiaroa_order_startsites_SHORT_READ), y=start)) + 
+  geom_boxplot(outlier.shape = NA, aes(fill=orf_type)) +
+  coord_flip() +
+  scale_y_continuous(labels = comma, limits = c(1, 5000)) +
+  theme_minimal() +
+  scale_fill_manual(values = c("#2471A3", "#A93226")) +
+  theme(legend.position = "none",
+        panel.grid.minor = element_blank()) +
+  xlab("ORF") + ylab("Start Site on Transcript") +
+  scale_x_discrete(limits=rev(variant_cannnonical_listed_in_order))
+taiaroa_var_startsites_plt_SHORT_READ
+
+# Kim
+#--------------------#
+
+# Need to regenerate order for every single line (the many transcripts)
+kim_order_startsites_SHORT_READ <- match(kim_var_startsites_SHORT_READ$subject, rev(variant_cannnonical_listed_in_order_kim_SHORT_READ))
+
+# Add information on variant or not
+kim_var_startsites_SHORT_READ <- kim_var_startsites_SHORT_READ %>%
+  mutate(orf_type = ifelse(grepl("variant",subject), "Variant", "Cannonical"))
+
+kim_var_startsites_plt_SHORT_READ <- ggplot(data=kim_var_startsites_SHORT_READ, aes(x=reorder(subject, kim_order_startsites_SHORT_READ), y=start)) + 
+  geom_boxplot(outlier.shape = NA, aes(fill=orf_type)) +
+  coord_flip() +
+  scale_y_continuous(labels = comma, limits = c(1, 5000)) +
+  theme_minimal() +
+  scale_fill_manual(values = c("#2471A3", "#A93226")) +
+  theme(legend.position = "none",
+        panel.grid.minor = element_blank()) +
+  xlab("ORF") + ylab("Start Site on Transcript") +
+  scale_x_discrete(limits=rev(variant_cannnonical_listed_in_order))
+kim_var_startsites_plt_SHORT_READ
+
+# Davidson
+#--------------------#
+
+# Need to regenerate order for every single line (the many transcripts)
+davidson_order_startsites_SHORT_READ <- match(davidson_var_startsites_SHORT_READ$subject, rev(variant_cannnonical_listed_in_order_davidson_SHORT_READ))
+
+# Add information on variant or not
+davidson_var_startsites_SHORT_READ <- davidson_var_startsites_SHORT_READ %>%
+  mutate(orf_type = ifelse(grepl("variant",subject), "Variant", "Cannonical"))
+
+davidson_var_startsites_plt_SHORT_READ <- ggplot(data=davidson_var_startsites_SHORT_READ, aes(x=reorder(subject, davidson_order_startsites_SHORT_READ), y=start)) + 
+  geom_boxplot(outlier.shape = NA, aes(fill=orf_type)) +
+  coord_flip() +
+  scale_y_continuous(labels = comma, limits = c(1, 5000)) +
+  theme_minimal() +
+  scale_fill_manual(values = c("#2471A3", "#A93226")) +
+  theme(legend.position = "none",
+        panel.grid.minor = element_blank()) +
+  xlab("ORF") + ylab("Start Site on Transcript") +
+  scale_x_discrete(limits=rev(variant_cannnonical_listed_in_order))
+davidson_var_startsites_plt_SHORT_READ
+
+```
+
+# Assembling counts and start sites
+```{r}
+
+counts_and_startsites_plt_SHORT_READ <- (taiaroa_var_counts_plt_SHORT_READ + taiaroa_var_startsites_plt_SHORT_READ +
+   theme(axis.title.y=element_blank(),
+                              axis.text.y=element_blank(),
+                              plot.title = element_blank())) /
+  (kim_var_counts_plt_SHORT_READ + kim_var_startsites_plt_SHORT_READ +
+     theme(axis.title.y=element_blank(),
+                              axis.text.y=element_blank(),
+                              plot.title = element_blank())) /
+  (davidson_var_counts_plt_SHORT_READ + davidson_var_startsites_plt_SHORT_READ +
+     theme(axis.title.y=element_blank(),
+                              axis.text.y=element_blank(),
+                              plot.title = element_blank()))
+
+
+ggsave("figure2_ORFS_SHORT_READ.pdf", counts_and_startsites_plt_SHORT_READ, width = 20, height=20, units="cm")
+ggsave("figure2_ORFS_SHORT_READ.svg", counts_and_startsites_plt_SHORT_READ, width = 20, height=20, units="cm")
+```
+
+# Plotting histograms of variant start counts and such.
+# Important variant subject start and end locations
+```{r}
+
+# Need to specify column types unless fusion_subject/_terminal are read in as logical type..
+
+taiaroa_subjects <- read_delim(
+  "synthetic/output_dataframes/taiaroa_subject_starts_and_ends_SYNTHETIC.tsv", 
+  col_types = cols(
+    query = col_character(),
+    subject = col_character(),
+    sstart = col_double(),
+    ssend = col_double(),
+    orf_type = col_character(),
+    fusion_subject = col_character(),
+    fusion_terminal = col_character()
+  ),
+  delim = "\t"
+)
+
+kim_subjects <- read_delim(
+  "synthetic/output_dataframes/kim_subject_starts_and_ends_SYNTHETIC.tsv", 
+  col_types = cols(
+    query = col_character(),
+    subject = col_character(),
+    sstart = col_double(),
+    ssend = col_double(),
+    orf_type = col_character(),
+    fusion_subject = col_character(),
+    fusion_terminal = col_character()
+  ),
+  delim = "\t"
+)
+
+davidson_subjects <- read_delim(
+  "synthetic/output_dataframes/davidson_subject_starts_and_ends_SYNTHETIC.tsv", 
+  col_types = cols(
+    query = col_character(),
+    subject = col_character(),
+    sstart = col_double(),
+    ssend = col_double(),
+    orf_type = col_character(),
+    fusion_subject = col_character(),
+    fusion_terminal = col_character()
+  ),
+  delim = "\t"
+)
+
+```
+
+# Plotting variant start start and end site histograms
+```{r}
+# davidson_subjects %>%
+#   group_by(subject) %>%
+#   tally()
+
+
+# Function I'll be using for plotting...
+plot_variant_sites <- function(in_data, orf, binwidth) {
+  ggplot() +
+  
+  # Getting start site variants with constant end stie
+  geom_histogram(data=in_data%>%filter(subject==orf, orf_type!="cannonical"),
+                 aes(x=sstart, y= ..count.., fill="1. Start site of variants."),
+                 binwidth = binwidth) +
+  
+  geom_histogram(data=in_data%>%filter(subject==orf, orf_type!="cannonical"),
+                 aes(x=ssend, y= -..count.., fill="2. End site of variants."),
+                 binwidth = binwidth) +
+  scale_fill_manual(values = c("#2471A3", "#A93226"))+
+  theme_minimal(base_size=20) +
+  xlab("Position") + ylab("Count") +
+  geom_hline(yintercept = 0) +
+  theme(legend.title=element_blank())
+}
+
+
+# Taiaroa
+#---------------------------------------#
+taiaroa_variant_sites_plt_M <- plot_variant_sites(taiaroa_subjects, "M", 1)
+taiaroa_variant_sites_plt_M
+
+taiaroa_variant_sites_plt_S <- plot_variant_sites(taiaroa_subjects, "S", 20)
+taiaroa_variant_sites_plt_S
+
+taiaroa_variant_sites_plt_orf1a <- plot_variant_sites(taiaroa_subjects, "ORF1a", 50)
+taiaroa_variant_sites_plt_orf1a
+
+# Kim
+#---------------------------------------#
+kim_variant_sites_plt_M <- plot_variant_sites(kim_subjects, "M", 1)
+kim_variant_sites_plt_M
+
+kim_variant_sites_plt_S <- plot_variant_sites(kim_subjects, "S", 20)
+kim_variant_sites_plt_S
+
+kim_variant_sites_plt_orf1a <- plot_variant_sites(kim_subjects, "ORF1a", 50)
+kim_variant_sites_plt_orf1a
+
+# Davidson
+#---------------------------------------#
+davidson_variant_sites_plt_M <- plot_variant_sites(davidson_subjects, "M", 1)
+davidson_variant_sites_plt_M
+
+davidson_variant_sites_plt_S <- plot_variant_sites(davidson_subjects, "S", 20)
+davidson_variant_sites_plt_S
+
+davidson_variant_sites_plt_orf1a <- plot_variant_sites(davidson_subjects, "ORF1a", 50)
+davidson_variant_sites_plt_orf1a
+
+
+```
+
+# Arranging variant start start and end site histograms
+```{r}
+
+M_arranged <- (taiaroa_variant_sites_plt_M + theme(axis.title.x=element_blank(), axis.text.x=element_blank(), axis.ticks.x=element_blank())) /
+              (kim_variant_sites_plt_M + theme(axis.title.x=element_blank(), axis.text.x=element_blank(), axis.ticks.x=element_blank())) / 
+              (davidson_variant_sites_plt_M) + 
+              plot_layout(guides = 'collect')
+
+S_arranged <- (taiaroa_variant_sites_plt_S + theme(axis.title.x=element_blank(), axis.text.x=element_blank(), axis.ticks.x=element_blank())) /
+              (kim_variant_sites_plt_S + theme(axis.title.x=element_blank(), axis.text.x=element_blank(), axis.ticks.x=element_blank())) / 
+              (davidson_variant_sites_plt_S) + 
+              plot_layout(guides = 'collect')
+
+orf1a_arranged <- (taiaroa_variant_sites_plt_orf1a + theme(axis.title.x=element_blank(), axis.text.x=element_blank(), axis.ticks.x=element_blank())) /
+              (kim_variant_sites_plt_orf1a + theme(axis.title.x=element_blank(), axis.text.x=element_blank(), axis.ticks.x=element_blank())) / 
+              (davidson_variant_sites_plt_orf1a) + 
+              plot_layout(guides = 'collect') 
+
+ggsave("M_ORFs_variant_start_end.pdf", M_arranged)
+ggsave("M_ORFs_variant_start_end.svg", M_arranged)
+
+ggsave("S_ORFs_variant_start_end.pdf", S_arranged)
+ggsave("S_ORFs_variant_start_end.svg", S_arranged)
+
+ggsave("orf1a_ORFs_variant_start_end.pdf", orf1a_arranged)
+ggsave("orf1a_ORFs_variant_start_end.svg", orf1a_arranged)
+
+
+
+```
+
+
+# Plotting fusions
+```{r}
+plot_fusions <- function(in_tbl, protein) {
+  # Filter the input dataframe for the desired protein
+  fusion <- 
+    in_tbl%>%filter(orf_type=="fusion", subject==protein)
+  
+  # Label the fusion protein as annotated or predicted
+  fusion <- fusion %>%
+    mutate(fusion_to_annotated_or_predicted = ifelse(grepl("NC", fusion_subject), "Predicted", "Annotated"))
+  
+  # Format the predicted ORFs
+  fusion$fusion_subject <- str_replace_all(fusion$fusion_subject, "NC_045512.2xxx", "") %>% str_replace_all(fixed("_+"), "")
+  
+  # Plot only the top 10 fusion subjects
+  top_10 <- fusion %>% group_by(fusion_subject) %>% summarize(freq = n()) %>% arrange(-freq) %>% head(10) %>% pull(fusion_subject)
+  fusion <- fusion %>%
+    filter(fusion_subject %in% top_10)
+  
+  # Define x axis order
+  cannonical_in_order <- c("ORF1a", "ORF1b", "S", "ORF3a", "E", "M", "ORF6", "ORF7a", "ORF7b", "ORF8", "N", "ORF10")
+  predicted_in_order <- unique(fusion$fusion_subject[order(nchar(fusion$fusion_subject), fusion$fusion_subject)])
+  predicted_in_order <- setdiff(predicted_in_order, cannonical_in_order)
+  order <- c(cannonical_in_order, predicted_in_order)
+  order <- order[order %in% fusion$fusion_subject]
+  order <- match(fusion$fusion_subject, rev(order))
+  
+  # Format the legned names
+  fusion$fusion_terminal <- fusion$fusion_terminal %>%
+    str_replace_all("C", "C Terminal Fusion") %>%
+    str_replace_all("N", "N Terminal Fusion") %>%
+    str_replace_all("both", "N and C Terminal Fusions") %>%
+    str_replace_all("self", "Internal Deletion")
+  
+  # Define legend order
+  fusion$fusion_terminal <- factor(fusion$fusion_terminal, levels = c("N Terminal Fusion", "C Terminal Fusion", "Internal Deletion", "Ambiguous", "N and C Terminal Fusions"))
+  
+  
+  ggplot(data=fusion, aes(x=reorder(fusion_subject, order))) +
+    geom_histogram(stat="count",
+                   aes(fill=fusion_terminal)) +
+    theme_minimal(base_size=20) +
+    coord_flip() +
+    #scale_color_manual(values = c("foo" = "#999999", "bar" = "#E69F00")) +
+    scale_fill_manual(values=c("N Terminal Fusion"="#A93226", "C Terminal Fusion"="#2471A3", "Internal Deletion"="#AED6F1", "Ambiguous"="#9B59B6", "N and C Terminal Fusions"="#48C9B0")) +
+    theme(legend.title=element_blank()) +
+    ylab("Count") + xlab("ORF1a Fusion Partner")
+  
+}
+
+taiaroa_fusion_orf1 <- plot_fusions(taiaroa_subjects, "ORF1a")
+taiaroa_fusion_orf1
+
+kim_fusion_orf1 <- plot_fusions(kim_subjects, "ORF1a")
+kim_fusion_orf1
+
+davidson_fusion_orf1 <- plot_fusions(davidson_subjects, "ORF1a")
+davidson_fusion_orf1
+
+
+```
+
+# Arrange fusion graphs
+```{r}
+
+fusion_orf1a_arranged <- taiaroa_fusion_orf1 + 
+  kim_fusion_orf1 + theme(axis.title.y = element_blank()) +
+  davidson_fusion_orf1 + theme(axis.title.y = element_blank()) +
+  plot_layout(guides = 'collect') 
+
+ggsave("orf1a_ORFS_fusions.pdf", fusion_orf1a_arranged, height=10, width = 40, units="cm")
+ggsave("orf1a_ORFS_fusions.svg", fusion_orf1a_arranged, height=10, width = 40, units="cm")
+
+```
+
+
+
+
+# Calculate percentage noncannonical for desired proteins
+```{r}
+
+kim_subjects%>%
+    group_by(subject, orf_type) %>%
+    tally()
+
+get_percent_noncannonical <- function(in_tbl, protein){
+  filt <- in_tbl%>%
+    group_by(subject, orf_type) %>%
+    tally() %>%
+    filter(subject==protein)
+  
+  cannonical <- filt %>%
+    filter(orf_type == "cannonical") %>%
+    pull(n)
+  fusion <- filt %>%
+    filter(orf_type == "fusion") %>%
+    pull(n)
+  variant <- filt %>%
+    filter(orf_type == "variant") %>%
+    pull(n)
+  
+  # Check if cannonical is zero. Then, all are variant.
+  if (is.integer(cannonical) && length(cannonical) == 0L ) {
+     100
+  } else {
+  # Otherwise, return the percentage.
+    ((variant + fusion)/(cannonical + variant + fusion))*100
+  }
+  
+  
+}
+
+# M
+print("M")
+get_percent_noncannonical(taiaroa_subjects, "M")
+get_percent_noncannonical(kim_subjects, "M")
+get_percent_noncannonical(davidson_subjects, "M")
+print("")
+
+# ORF1a
+print("ORF1a")
+get_percent_noncannonical(taiaroa_subjects, "ORF1a")
+get_percent_noncannonical(kim_subjects, "ORF1a")
+get_percent_noncannonical(davidson_subjects, "ORF1a")
+print("")
+
+
+# S
+print("S")
+get_percent_noncannonical(taiaroa_subjects, "S")
+get_percent_noncannonical(kim_subjects, "S")
+get_percent_noncannonical(davidson_subjects, "S")
+print("")
+
+kim_subjects %>%
+  filter(subject=="S", orf_type!="cannonical") %>%
+  nrow()
+
+kim_subjects %>%
+  filter(subject=="S", orf_type=="cannonical") %>%
+  nrow()
+
+
+# Getting the percentage of ORF1a that is *fusion*
+taiaroa_subjects %>%
+  group_by(subject, orf_type) %>%
+  filter(subject=="ORF1a") %>%
+  tally()
+# Taiaroa: 32%
+
+kim_subjects %>%
+  group_by(subject, orf_type) %>%
+  filter(subject=="ORF1a") %>%
+  tally()
+# Kim: 31%
+
+davidson_subjects %>%
+  group_by(subject, orf_type) %>%
+  filter(subject=="ORF1a") %>%
+  tally()
+# Davidson: 29%
+```
+
+
+# Importing total counts for each ORF
+```{r}
+taiaroa_counts <- read_delim("synthetic/output_dataframes/taiaroa_total_ORF_counts_SYNTHETIC.tsv", delim="\t")
+kim_counts <- read_delim("synthetic/output_dataframes/kim_total_ORF_counts_SYNTHETIC.tsv", delim="\t")
+davidson_counts <- read_delim("synthetic/output_dataframes/davidson_total_ORF_counts_SYNTHETIC.tsv", delim="\t")
+
+# Label predicted vs annotated
+taiaroa_counts <- taiaroa_counts %>%
+  mutate(orf_type=ifelse(grepl("NC", ORF), "Predicted", "Annotated"))
+kim_counts <- kim_counts %>%
+  mutate(orf_type=ifelse(grepl("NC", ORF), "Predicted", "Annotated"))
+davidson_counts <- davidson_counts %>%
+  mutate(orf_type=ifelse(grepl("NC", ORF), "Predicted", "Annotated"))
+
+# Format the hypothetic ORFs
+taiaroa_counts$ORF <- str_replace_all(taiaroa_counts$ORF, "NC_045512.2xxx", "")
+kim_counts$ORF <- str_replace_all(kim_counts$ORF, "NC_045512.2xxx", "")
+davidson_counts$ORF <- str_replace_all(davidson_counts$ORF, "NC_045512.2xxx", "")
+
+taiaroa_counts$ORF <- str_replace_all(taiaroa_counts$ORF, fixed("_+"), "")
+kim_counts$ORF <- str_replace_all(kim_counts$ORF, fixed("_+"), "")
+davidson_counts$ORF <- str_replace_all(davidson_counts$ORF, fixed("_+"), "")
+
+# Arrange ORFs by count
+taiaroa_counts <- arrange(taiaroa_counts, -Counts)
+kim_counts <- arrange(kim_counts, -Counts)
+davidson_counts <- arrange(davidson_counts, -Counts)
+```
+
+
+# Plotting total counts for each ORF
+```{r}
+
+plot_total_counts <- function(in_data, ORF_list) {
+   # Filter by min count
+   in_data <- in_data %>%
+     filter(ORF %in% ORF_list)
+  
+  o <- match(in_data$ORF, rev(ORF_list))
+  
+  ggplot(data=in_data, aes(x=reorder(ORF,o), y=Counts)) +
+    geom_col(aes(fill=orf_type)) +
+    coord_flip() +
+    theme_minimal(base_size=17) +
+    scale_fill_manual(values = c("#2471A3", "#A93226")) +
+    theme(panel.grid.minor = element_blank(),
+          legend.title = element_blank(), 
+          axis.text.x = element_text(angle = 45, hjust = .5, vjust = .5)) +
+    xlab("ORF") + ylab("Number of ORFs") +
+    scale_y_continuous(labels=comma)
+}
+
+# Ordering by the top 15 ORFs in the Taiaroa dataset...
+top_15_taiaroa_counts <- taiaroa_counts$ORF[1:15]
+
+taiaroa_total_counts_plt <- plot_total_counts(taiaroa_counts, top_15_taiaroa_counts)
+kim_total_counts_plt <- plot_total_counts(kim_counts, top_15_taiaroa_counts)
+davidson_total_counts_plt <- plot_total_counts(davidson_counts, top_15_taiaroa_counts)
+
+```
+
+
+# Importing 5' most counts for canonical and hypothesized ORFs
+```{r}
+taiaroa_most_5 <- read_delim("synthetic/output_dataframes/taiaroa_fiveprime-most-orf_counts_SYNTHETIC.tsv", delim="\t")
+kim_most_5 <- read_delim("synthetic/output_dataframes/kim_fiveprime-most-orf_counts_SYNTHETIC.tsv", delim="\t")
+davidson_most_5 <- read_delim("synthetic/output_dataframes/davidson_fiveprime-most-orf_counts_SYNTHETIC.tsv", delim="\t")
+
+# Label predicted vs annotated
+taiaroa_most_5 <- taiaroa_most_5 %>%
+  mutate(orf_type=ifelse(grepl("NC", ORF), "Predicted", "Annotated"))
+kim_most_5 <- kim_most_5 %>%
+  mutate(orf_type=ifelse(grepl("NC", ORF), "Predicted", "Annotated"))
+davidson_most_5 <- davidson_most_5 %>%
+  mutate(orf_type=ifelse(grepl("NC", ORF), "Predicted", "Annotated"))
+
+# Format the hypothetic ORFs
+taiaroa_most_5$ORF <- str_replace_all(taiaroa_most_5$ORF, "NC_045512.2xxx", "")
+kim_most_5$ORF <- str_replace_all(kim_most_5$ORF, "NC_045512.2xxx", "")
+davidson_most_5$ORF <- str_replace_all(davidson_most_5$ORF, "NC_045512.2xxx", "")
+
+taiaroa_most_5$ORF <- str_replace_all(taiaroa_most_5$ORF, fixed("_+"), "")
+kim_most_5$ORF <- str_replace_all(kim_most_5$ORF, fixed("_+"), "")
+davidson_most_5$ORF <- str_replace_all(davidson_most_5$ORF, fixed("_+"), "")
+
+# Arrange ORFs by count
+taiaroa_most_5 <- arrange(taiaroa_most_5, -Counts)
+kim_most_5 <- arrange(kim_most_5, -Counts)
+davidson_most_5 <- arrange(davidson_most_5, -Counts)
+
+```
+
+
+
+# Plotting 5' most counts for canonical and hypothesized ORFs
+```{r}
+# Function for plotting
+plot_most_5_counts <- function(in_data, ORF_list) {
+  # Filter by min count
+  in_data <- in_data %>%
+    filter(ORF %in% ORF_list)
+  
+  o <- match(in_data$ORF, rev(ORF_list))
+  
+  ggplot(data=in_data, aes(x=reorder(ORF, o), y=Counts)) +
+    geom_col(aes(fill=orf_type)) +
+    coord_flip() +
+    theme_minimal(base_size=17) +
+    scale_fill_manual(values = c("#2471A3", "#A93226")) +
+    theme(panel.grid.minor = element_blank(),
+          legend.title = element_blank(), 
+          axis.text.x = element_text(angle = 45, hjust = .5, vjust = .5)) +
+    xlab("ORF") + ylab("Number of transcripts with\n ORF as 5'-most ORF") +
+    scale_y_continuous(labels=comma) + scale_x_discrete(breaks=ORF_list)
+}
+
+# Taiaroa has lowest counts, so lets pick ORFs to present based on it, and present all consistent ORFs
+ORF_list <- taiaroa_most_5 %>%
+  filter(Counts>10) %>%
+  pull(ORF)
+
+# Taiaroa has no reads with 28710_28955 at 5', so need to add 0 count there
+taiaroa_most_5 <- taiaroa_most_5 %>%
+  add_row(ORF="28710_28955", Counts=0, orf_type="Predicted")
+
+taiaroa_most_5_plt <- plot_most_5_counts(taiaroa_most_5, top_15_taiaroa_counts)
+taiaroa_most_5_plt
+
+kim_most_5_plt <- plot_most_5_counts(kim_most_5, top_15_taiaroa_counts)
+kim_most_5_plt
+
+davidson_most_5_plt <- plot_most_5_counts(davidson_most_5, top_15_taiaroa_counts)
+davidson_most_5_plt
+```
+
+
+# Arrange Counts plots
+```{r}
+
+counts_agg <- 
+  taiaroa_total_counts_plt + theme(axis.title.x=element_blank()) + taiaroa_most_5_plt + theme(axis.title.y=element_blank(), axis.text.y=element_blank(), axis.ticks.y=element_blank(), axis.title.x=element_blank()) +
+  kim_total_counts_plt + theme(axis.title.x=element_blank()) + kim_most_5_plt + theme(axis.title.y=element_blank(), axis.text.y=element_blank(), axis.ticks.y=element_blank(), axis.title.x=element_blank()) +
+  davidson_total_counts_plt + davidson_most_5_plt + theme(axis.title.y=element_blank(), axis.text.y=element_blank(), axis.ticks.y=element_blank()) +
+  plot_layout(guides="collect", ncol=2)
+
+# most_5_counts_plt_agg <- taiaroa_most_5_plt + 
+#   kim_most_5_plt + theme(axis.title.y=element_blank(),
+#         axis.text.y=element_blank(),
+#         axis.ticks.y=element_blank()) +
+#   davidson_most_5_plt + theme(axis.title.y=element_blank(),
+#         axis.text.y=element_blank(),
+#         axis.ticks.y=element_blank()) + 
+#   plot_layout(guides="collect")
+
+ggsave("orf_and_5prime_counts.pdf", counts_agg, width=25, height=30, units="cm")
+ggsave("orf_and_5prime_counts.svg", counts_agg, width=25, height=30, units="cm")
+
+```
+
+
+

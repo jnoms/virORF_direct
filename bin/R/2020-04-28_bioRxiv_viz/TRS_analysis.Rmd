@@ -1,0 +1,93 @@
+---
+title: "SARS-CoV-2: Plottgin TRS information"
+output: html_notebook
+---
+
+# Load libraries
+```{r}
+library(tidyverse)
+library(scales) #allows use of "comma" to replace i.e. 1e6 with 1,000,000 during plotting
+
+library(pheatmap)
+library(patchwork) # allows composing/orienting plots
+library(RColorBrewer)
+```
+
+# Import data
+```{r}
+taiaroa <- read_delim("output/taiaroa_TRS_percentages.tsv", delim="\t")
+kim <- read_delim("output/kim_TRS_percentages.tsv", delim="\t")
+davidson <- read_delim("output/davidson_TRS_percentages.tsv", delim="\t")
+
+
+# Make combined bar for x-axis, and also only keep the TOP (rank 1) seed
+taiaroa <- taiaroa %>%
+  mutate(position = paste(ORF, position_type, sep="_")) %>% 
+  filter(seed != "Other", rank!=2)
+kim <- kim %>%
+  mutate(position = paste(ORF, position_type, sep="_")) %>% 
+  filter(seed != "Other", rank!=2)
+davidson <- davidson %>%
+  mutate(position = paste(ORF, position_type, sep="_")) %>% 
+  filter(seed != "Other", rank!=2)
+```
+
+# Plot
+```{r}
+
+#gene_order <- c("ORF1a_internal", "S_cannonical", "S_internal", "ORF3A_cannonical", "ORF3A_internal", "E_cannonical", "E_internal", "M_cannonical", "M_internal", "ORF7A_cannonical", "ORF7A_internal",  "ORF8_cannonical", "ORF8_internal", "N_cannonical", "N_internal")
+gene_order <- c("ORF1a_internal", "S_internal",  "ORF3A_internal",  "E_internal",  "M_internal",  "ORF7A_internal",   "ORF8_internal",  "N_internal", "S_cannonical", "ORF3A_cannonical", "E_cannonical","M_cannonical","ORF7A_cannonical","ORF8_cannonical","N_cannonical")
+x_ticks <- gene_order %>%
+  str_replace_all("_internal", "") %>%
+  str_replace_all("_cannonical", "")
+
+# Function for plotting
+plot_trs_percentages <- function(in_tbl){
+  ggplot(data = in_tbl,
+       aes(x=position, y=percentage)) +
+    geom_col(aes(fill=position_type, label = ORF)) + 
+    coord_flip() + 
+    scale_x_discrete(limits=rev(gene_order), 
+                     labels=rev(x_ticks) ) + 
+    theme_minimal(base_size=17) +
+    scale_fill_manual(values = c("#2471A3", "#A93226"),
+                      labels=c("Canonical TRS Site", "Within ORF"), 
+                      name="Junction Location") +
+    xlab("ORF") + ylab("Percentage")  +
+    geom_text(data=in_tbl, aes(label=seed),hjust="inward")
+}
+
+
+taiaroa_trs <- plot_trs_percentages(taiaroa)
+taiaroa_trs
+kim_trs <- plot_trs_percentages(kim)
+kim_trs
+davidson_trs <- plot_trs_percentages(davidson)
+davidson_trs
+
+```
+
+# Arrange the figure
+```{r}
+
+trs_arranged <- taiaroa_trs + 
+  kim_trs + theme(axis.title.y=element_blank(),
+                              axis.text.y=element_blank(),
+                              plot.title = element_blank()) +
+  davidson_trs + theme(axis.title.y=element_blank(),
+                              axis.text.y=element_blank(),
+                              plot.title = element_blank()) +
+  plot_layout(guides = 'collect')
+
+
+ggsave("TRS_analysis.pdf", width = 40, height=15, units="cm")
+ggsave("TRS_analysis.svg", width = 40, height=15, units="cm")
+
+```
+
+
+
+
+
+
+

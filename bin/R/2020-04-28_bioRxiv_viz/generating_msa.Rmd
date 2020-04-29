@@ -1,0 +1,37 @@
+---
+title: "SARS-CoV-2: Making MSA's between variant and canonical proteins."
+output: html_notebook
+---
+
+# Load libraries
+```{r}
+library(msa)
+```
+
+# M
+```{r}
+M <- readAAStringSet("inputs/M_variant.fasta")
+M_msa <- msa(M, order="input")
+
+msaPrettyPrint(M_msa, output="pdf",askForOverwrite=FALSE, verbose=FALSE, shadingMode="identical", shadingColors="black", showLogo="none")
+```
+
+# ORF1a
+```{r}
+O1a_N <- readAAStringSet("inputs/ORF1a_variant_N.fasta")
+O1a_N_msa <- msa(O1a_N, order="input")
+msaPrettyPrint(O1a_N_msa, output="pdf",showLogo="none", askForOverwrite=FALSE, verbose=FALSE, shadingMode="identical", shadingColors="black")
+
+O1a_O1a <- readAAStringSet("inputs/ORF1a_variant_ORF1A.fasta")
+O1a_O1a_msa <- msa(O1a_O1a, order="input")
+msaPrettyPrint(O1a_O1a_msa, output="pdf", askForOverwrite=FALSE, verbose=FALSE, shadingMode="identical", shadingColors="black", showLogo="none")
+
+```
+
+# S
+```{r}
+S <- readAAStringSet("inputs/S_variant.fasta")
+S_msa <- msa(S, order="input")
+msaPrettyPrint(S_msa, output="pdf", askForOverwrite=FALSE, verbose=FALSE, shadingMode="identical", shadingColors="black", showLogo="none")
+```
+

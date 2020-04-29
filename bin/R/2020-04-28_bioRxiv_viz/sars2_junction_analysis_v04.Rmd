@@ -1,0 +1,674 @@
+---
+title: "SARS-CoV-2: Visualization of long-read junctions."
+output: html_notebook
+---
+
+# Load libraries
+```{r}
+library(tidyverse)
+library(scales) #allows use of "comma" to replace i.e. 1e6 with 1,000,000 during plotting
+
+library(pheatmap)
+library(patchwork) # allows composing/orienting plots
+library(RColorBrewer)
+
+# geneplots
+library(gggenes)
+```
+
+# Import and format data
+```{r}
+taiaroa <- read_delim("inputs/taiaroa_mapped_junctions.tsv", delim="\t")
+kim <- read_delim("inputs/kim_mapped_junctions.tsv", delim="\t")
+davidson <- read_delim("inputs/davidson_mapped_junctions.tsv", delim="\t")
+
+colnames(taiaroa) <- c("read_name", "five", "three")
+colnames(kim) <- c("read_name", "five", "three")
+colnames(davidson) <- c("read_name", "five", "three")
+
+# Label genes by their 3' junctions
+davidson <- davidson %>%
+  mutate(gene = "Intergenic") %>%
+  mutate(gene = ifelse(three>=21563, ifelse(three<=25384,"1. S", "Intergenic" ), "Intergenic")) %>%
+  mutate(gene = ifelse(three>=25393, ifelse(three<=26220,"2. ORF3a", gene ), gene)) %>%
+  mutate(gene = ifelse(three>=26245, ifelse(three<=26472,"3. E", gene ), gene)) %>%
+  mutate(gene = ifelse(three>=26523, ifelse(three<=27191,"4. M", gene ), gene)) %>%
+  mutate(gene = ifelse(three>=27202, ifelse(three<=27387,"5. ORF6", gene ), gene)) %>%
+  mutate(gene = ifelse(three>=27394, ifelse(three<=27887,"6. ORF7a/b", gene ), gene)) %>%
+  mutate(gene = ifelse(three>=27894, ifelse(three<=28259,"7. ORF8", gene ), gene)) %>%
+  mutate(gene = ifelse(three>=28274, ifelse(three<=29533,"8. N", gene ), gene)) %>%
+  mutate(gene = ifelse(three>=29558, ifelse(three<=29674,"9. ORF10", gene ), gene))
+
+taiaroa <- taiaroa %>%
+  mutate(gene = "Intergenic") %>%
+  mutate(gene = ifelse(three>=21563, ifelse(three<=25384,"1. S", "Intergenic" ), "Intergenic")) %>%
+  mutate(gene = ifelse(three>=25393, ifelse(three<=26220,"2. ORF3a", gene ), gene)) %>%
+  mutate(gene = ifelse(three>=26245, ifelse(three<=26472,"3. E", gene ), gene)) %>%
+  mutate(gene = ifelse(three>=26523, ifelse(three<=27191,"4. M", gene ), gene)) %>%
+  mutate(gene = ifelse(three>=27202, ifelse(three<=27387,"5. ORF6", gene ), gene)) %>%
+  mutate(gene = ifelse(three>=27394, ifelse(three<=27887,"6. ORF7a/b", gene ), gene)) %>%
+  mutate(gene = ifelse(three>=27894, ifelse(three<=28259,"7. ORF8", gene ), gene)) %>%
+  mutate(gene = ifelse(three>=28274, ifelse(three<=29533,"8. N", gene ), gene)) %>%
+  mutate(gene = ifelse(three>=29558, ifelse(three<=29674,"9. ORF10", gene ), gene))
+
+kim <- kim %>%
+  mutate(gene = "Intergenic") %>%
+  mutate(gene = ifelse(three>=21563, ifelse(three<=25384,"1. S", "Intergenic" ), "Intergenic")) %>%
+  mutate(gene = ifelse(three>=25393, ifelse(three<=26220,"2. ORF3a", gene ), gene)) %>%
+  mutate(gene = ifelse(three>=26245, ifelse(three<=26472,"3. E", gene ), gene)) %>%
+  mutate(gene = ifelse(three>=26523, ifelse(three<=27191,"4. M", gene ), gene)) %>%
+  mutate(gene = ifelse(three>=27202, ifelse(three<=27387,"5. ORF6", gene ), gene)) %>%
+  mutate(gene = ifelse(three>=27394, ifelse(three<=27887,"6. ORF7a/b", gene ), gene)) %>%
+  mutate(gene = ifelse(three>=27894, ifelse(three<=28259,"7. ORF8", gene ), gene)) %>%
+  mutate(gene = ifelse(three>=28274, ifelse(three<=29533,"8. N", gene ), gene)) %>%
+  mutate(gene = ifelse(three>=29558, ifelse(three<=29674,"9. ORF10", gene ), gene))
+
+
+# Calculate junction length for each
+davidson <- davidson %>%
+  mutate(junction_length=three-five)
+
+taiaroa <- taiaroa %>%
+  mutate(junction_length=three-five)
+
+kim <- kim %>%
+  mutate(junction_length=three-five)
+```
+# Set up coordinates for gggenes plots
+```{r}
+sars2_genes <- tibble(
+  molecule = "SARS-CoV2",
+  gene = c("S", "ORF3a", "E", "M", "ORF6", "ORF7A", "ORF7B", "ORF8", "N", "ORF10"),
+  start = c(21563, 25393, 26245, 26523, 27202, 27394, 27756, 27894, 28274, 29558),
+  end = c(25384, 26220, 26472, 27191, 27387, 27759, 27887, 28259, 29533, 29674),
+  strand = "forward",
+  direction = 1
+)
+
+# Specify order of gene for plotting
+sars2_genes$gene <- factor(sars2_genes$gene, levels=c("S", "ORF3a", "E", "M", "ORF6", "ORF7A", "ORF7B", "ORF8", "N", "ORF10"), ordered = T)
+```
+
+# gggenes virus genome map and subgenomic RNAs
+```{r}
+
+ # NOTE - FOR THIS ONE HAVE SQUEEZED IN ORF1AB FOR USE PLOTTING THE SUBGENOMIC RNAS RELATIVE TO FULL GENOME
+#-----------------------------------#
+
+all_sars2_genes <- c("Leader", "ORF1AB", "S", "ORF3a", "E", "M", "ORF6", "ORF7A", "ORF7B", "ORF8", "N", "ORF10")
+sars2_genome <- tibble(
+  molecule = "SARS-CoV2",
+  gene = factor(all_sars2_genes, levels=c("Leader", "ORF1AB", "S", "ORF3a", "E", "M", "ORF6", "ORF7A", "ORF7B", "ORF8", "N", "ORF10"), ordered = T),
+  start = c(19735, 20000, 23563, 25393, 26245, 26523, 27202, 27394, 27756, 27894, 28274, 29558),
+  end = c(19800, 23555, 25384, 26220, 26472, 27191, 27387, 27759, 27887, 28259, 29533, 29674),
+  strand = "forward",
+  direction = 1
+)
+
+map_colors <- c("#000000", "#F6DDCC", "#BFC9CA", "#A93226", "#9B59B6", "#AED6F1", "#2471A3", "#48C9B0", "#1E8449", "#F7DC6F", "#AF601A" , "#5D6D7E")
+
+genome_map_plt <- ggplot(sars2_genome, aes(xmin = start, xmax = end, y =
+                                            molecule, fill = gene, label = gene)) +
+  geom_gene_arrow(arrowhead_height = unit(3, "mm"), arrowhead_width = unit(1, "mm")) +
+  theme_genes() +
+  scale_fill_manual(values=map_colors)
+ggsave("genome_maps/genome_map_condensed.pdf", genome_map_plt)
+ggsave("genome_maps/genome_map_condensed.svg", genome_map_plt)
+
+
+# Make map with the non-ORF1ab genes, and label the TRS'
+#-----------------------------------#
+
+sars2_genes_plt_TRS_lines <- ggplot(sars2_genes, aes(xmin = start, xmax = end, y =
+                                            molecule, fill = gene, label = gene)) +
+  geom_gene_arrow(arrowhead_height = unit(3, "mm"), arrowhead_width = unit(1, "mm")) +
+  theme_genes() +
+  scale_fill_manual(values=map_colors[3:length(map_colors)]) + 
+  geom_vline(xintercept=c(21555, 25384,26236, 26472, 27040, 27387, 27887, 28259))
+ggsave("genome_maps/genes_w_TRS_lines.pdf", sars2_genes_plt_TRS_lines)
+ggsave("genome_maps/genes_w_TRS_lines.svg", sars2_genes_plt_TRS_lines)
+
+
+# ACGAAC
+# <_sre.SRE_Match object; span=(69, 75), match='ACGAAC'>
+# <_sre.SRE_Match object; span=(21555, 21561), match='ACGAAC'>
+# <_sre.SRE_Match object; span=(25384, 25390), match='ACGAAC'>
+# <_sre.SRE_Match object; span=(26236, 26242), match='ACGAAC'>
+# <_sre.SRE_Match object; span=(26472, 26478), match='ACGAAC'>
+# <_sre.SRE_Match object; span=(27040, 27046), match='ACGAAC'>
+# <_sre.SRE_Match object; span=(27387, 27393), match='ACGAAC'>
+# <_sre.SRE_Match object; span=(27887, 27893), match='ACGAAC'>
+# <_sre.SRE_Match object; span=(28259, 28265), match='ACGAAC'>
+
+# # Function for more concise plotting
+# 
+# position <- 4
+# 
+# 
+# plot_subgenomic_rnas <- function(position, path){
+#   
+#   genes <- c("Leader", "ORF1AB", "S", "ORF3a", "E", "M", "ORF6", "ORF7A", "ORF7B", "ORF8", "N", "ORF10")
+#   starts <- c(14, 266, 21563, 25393, 26245, 26523, 27202, 27394, 27756, 27894, 28274, 29558)
+#   ends <- c(75, 21555, 25384, 26220, 26472, 27191, 27387, 27759, 27887, 28259, 29533, 29674)
+#   colors <-  c("#000000", "#F6DDCC", "#BFC9CA", "#A93226", "#9B59B6", "#AED6F1", "#2471A3", "#48C9B0", "#1E8449", "#F7DC6F", "#AF601A" , "#5D6D7E")
+#   
+#   if (position > 1){
+#     len_leader <- ends[1] - starts[1]
+#     starts <- c(starts[1], starts[position:length(starts)])
+#     ends <- c(ends[1], ends[position:length(ends)])
+#     
+#     starts[1] <- starts[2] - len_leader
+#     ends[1] <- starts[2]
+#     
+#     colors <- c(colors[1], colors[position:length(colors)])
+#     
+#     genes <- c(genes[1], genes[position:length(genes)])
+#   }
+#   
+#   
+#   starts
+#   ends
+#   
+#   map <- tibble(
+#     molecule = "SARS-CoV2",
+#     gene = factor(genes, levels=genes, ordered = T),
+#     start = starts,
+#     end = ends,
+#     strand = "forward",
+#     direction = 1
+#   )
+#   
+#   map_plt <- ggplot(map, aes(xmin = start, xmax = end, y =
+#                                               molecule, fill = gene, label = gene)) +
+#     geom_gene_arrow(arrowhead_height = unit(3, "mm"), arrowhead_width = unit(1, "mm")) +
+#     theme_genes() +
+#     scale_fill_manual(values=colors)
+#   
+#   ggsave(path, map_plt)
+# 
+# }
+# 
+# plot_subgenomic_rnas(3, "genome_maps/S.svg")
+# plot_subgenomic_rnas(4, "genome_maps/ORF3A.svg")
+# plot_subgenomic_rnas(5, "genome_maps/E.svg")
+# plot_subgenomic_rnas(6, "genome_maps/M.svg")
+# plot_subgenomic_rnas(7, "genome_maps/ORF6.svg")
+# plot_subgenomic_rnas(8, "genome_maps/ORF7A.svg")
+# plot_subgenomic_rnas(9, "genome_maps/ORF7B.svg")
+# plot_subgenomic_rnas(10, "genome_maps/ORF8.svg")
+# plot_subgenomic_rnas(11, "genome_maps/N.svg")
+# plot_subgenomic_rnas(12, "genome_maps/ORF10.svg")
+
+```
+
+
+
+# 2D histogram of junctions
+```{r}
+
+# all junctions
+#-----------------------#
+plot_all_junctions_2d_histogram <- function(in_tbl, max=100000) {
+  ggplot(in_tbl, aes(three, five)) +
+  stat_bin2d(binwidth = c(100,100) ) + 
+  scale_fill_gradientn(limits=c(1,max),
+                       colours=brewer.pal(5,"OrRd"),
+                       trans="log10",
+                       labels=comma,
+                       breaks=10**(1:10)) +
+  theme_minimal() + 
+  theme(panel.grid.minor = element_blank()) +
+  ylab("5'") + 
+  xlab("3'") 
+}
+
+taiaroa_all_junctions <- plot_all_junctions_2d_histogram(taiaroa)
+taiaroa_all_junctions
+
+kim_all_junctions <- plot_all_junctions_2d_histogram(kim)
+kim_all_junctions
+
+davidson_all_junctions <- plot_all_junctions_2d_histogram(davidson)
+davidson_all_junctions
+
+
+
+
+#ggsave("figures/davidson_all_junctions.pdf", davidson_all_junctions, width=10, height=10)
+```
+
+# Long read - 5' 100bp  2d histograms
+```{r}
+
+# Plotting function
+plot_5_100bp_2d_histogram <- function(in_tbl, max=100000) {
+  ggplot(in_tbl %>%filter(five<=100, three>21000), aes(three, five)) +
+  stat_bin2d(binwidth = c(100,1) ) + 
+  scale_fill_gradientn(limits=c(1,max),
+                       colours=brewer.pal(5,"OrRd"),
+                       trans="log10",
+                       labels=comma,
+                       breaks=10**(1:10)) +
+  theme_minimal() + 
+  theme(panel.grid.minor = element_blank()) +
+  ylab("5'") + 
+  xlab("3'") +
+  geom_vline(xintercept = c(21563, 25393, 26245, 26523, 27202, 27394, 27756, 27894, 28274,29558) , 
+              color = "black",
+              size=0.1,
+              alpha=0.5,
+              linetype="dashed")
+}
+
+taiaroa_inset <- plot_5_100bp_2d_histogram(taiaroa)
+kim_inset <- plot_5_100bp_2d_histogram(kim)
+davidson_inset <- plot_5_100bp_2d_histogram(davidson)
+```
+
+
+# Long read 3' junctions
+```{r}
+
+
+plot_cannonical_3prime_junctions <- function(in_tbl, ymax=110000) {
+  ggplot() +
+    geom_histogram(data=in_tbl%>%filter(three>=21000, five<=100), aes(x=three), binwidth = 20) +
+    theme_minimal() + 
+    scale_y_continuous(limits=c(0,ymax)) +
+    theme(panel.grid.minor = element_blank()) +
+    theme(plot.title = element_text(size=10),
+          axis.text.x = element_text(size = 10, angle = 45, hjust = .5, vjust = .5)) +
+    guides(fill=guide_legend(title="Gene")) +
+    xlab("3'") + 
+    ylab("Count") +
+    geom_vline(xintercept = c(21563, 25393, 26245, 26523, 27202, 27394, 27756, 27894, 28274,29558) , 
+                color = "black",
+                size=0.2,
+                alpha=0.5,
+                linetype="dashed") +
+    scale_fill_manual(values=c("#BFC9CA", "#A93226", "#9B59B6", "#AED6F1", "#2471A3", "#48C9B0", "#1E8449", "#F7DC6F", "#AF601A" , "#5D6D7E")) +
+    geom_gene_arrow(data = sars2_genes, aes(xmin = start, xmax = end, y = ymax, fill = gene, label=gene))
+  
+}
+
+taiaroa_3junctions_cannonical <- plot_cannonical_3prime_junctions(taiaroa, 110000)
+taiaroa_3junctions_cannonical
+
+
+kim_3junctions_cannonical <-  plot_cannonical_3prime_junctions(kim, 110000)
+kim_3junctions_cannonical
+
+davidson_3junctions_cannonical <- plot_cannonical_3prime_junctions(davidson, 110000)
+davidson_3junctions_cannonical
+
+
+```
+
+
+# Importing the short read junctions
+```{r}
+SRR11517741 <- read_delim("inputs/SRR11517741_junctions.txt", delim="\t")
+SRR11517742 <- read_delim("inputs/SRR11517742_junctions.txt", delim="\t")
+SRR11517743 <- read_delim("inputs/SRR11517743_junctions.txt", delim="\t")
+
+
+colnames(SRR11517741) <- c("read_name", "five", "three")
+colnames(SRR11517742) <- c("read_name", "five", "three")
+colnames(SRR11517743) <- c("read_name", "five", "three")
+
+
+
+# Label genes by their 3' junctions
+label_genes_by_3prime <- function(in_tbl) {
+  in_tbl %>%
+    mutate(gene = "Intergenic") %>%
+    mutate(gene = ifelse(three>=21563, ifelse(three<=25384,"1. S", "Intergenic" ), "Intergenic")) %>%
+    mutate(gene = ifelse(three>=25393, ifelse(three<=26220,"2. ORF3a", gene ), gene)) %>%
+    mutate(gene = ifelse(three>=26245, ifelse(three<=26472,"3. E", gene ), gene)) %>%
+    mutate(gene = ifelse(three>=26523, ifelse(three<=27191,"4. M", gene ), gene)) %>%
+    mutate(gene = ifelse(three>=27202, ifelse(three<=27387,"5. ORF6", gene ), gene)) %>%
+    mutate(gene = ifelse(three>=27394, ifelse(three<=27887,"6. ORF7a/b", gene ), gene)) %>%
+    mutate(gene = ifelse(three>=27894, ifelse(three<=28259,"7. ORF8", gene ), gene)) %>%
+    mutate(gene = ifelse(three>=28274, ifelse(three<=29533,"8. N", gene ), gene)) %>%
+    mutate(gene = ifelse(three>=29558, ifelse(three<=29674,"9. ORF10", gene ), gene))
+}
+
+SRR11517741 <- label_genes_by_3prime(SRR11517741)
+SRR11517742 <- label_genes_by_3prime(SRR11517742)
+SRR11517743 <- label_genes_by_3prime(SRR11517743)
+
+```
+
+# Plotting the short read junctions
+```{r}
+
+# All junctions
+#--------------------#
+SRR11517741_all_junctions <- plot_all_junctions_2d_histogram(SRR11517741, 500000)
+SRR11517741_all_junctions
+
+SRR11517742_all_junctions <- plot_all_junctions_2d_histogram(SRR11517742, 500000)
+SRR11517742_all_junctions
+
+SRR11517743_all_junctions <- plot_all_junctions_2d_histogram(SRR11517743, 500000)
+SRR11517743_all_junctions
+
+# Adding inset
+SRR11517741_inset <- plot_5_100bp_2d_histogram(SRR11517741, 500000)
+SRR11517741_inset
+
+SRR11517742_inset <- plot_5_100bp_2d_histogram(SRR11517742, 500000)
+SRR11517742_inset
+
+SRR11517743_inset <- plot_5_100bp_2d_histogram(SRR11517743, 500000)
+SRR11517743_inset
+
+# 3' junctions
+#--------------------#
+SRR11517741_3junctions_cannonical <- plot_cannonical_3prime_junctions(SRR11517741, 35000)
+SRR11517741_3junctions_cannonical
+
+SRR11517742_3junctions_cannonical <- plot_cannonical_3prime_junctions(SRR11517742, 35000)
+SRR11517742_3junctions_cannonical
+
+SRR11517743_3junctions_cannonical <- plot_cannonical_3prime_junctions(SRR11517743, 35000)
+SRR11517743_3junctions_cannonical
+```
+
+
+
+# Comnbining plots. Will do long- and short- reads separately.
+```{r}
+
+# Long reads
+#----------------#
+
+# Formating the insets
+inset1 <- taiaroa_inset
+inset2 <- kim_inset + theme(axis.title.y=element_blank(),
+                            axis.text.y=element_blank())
+inset3 <- taiaroa_inset + theme(axis.title.y=element_blank(),
+                            axis.text.y=element_blank())
+
+# Combining the 5-by-3 junctions
+all_junctions_combined <- 
+  taiaroa_all_junctions + 
+  kim_all_junctions + theme(axis.title.y=element_blank(),
+                            axis.text.y=element_blank()) + 
+  davidson_all_junctions + theme(axis.title.y=element_blank(),
+                            axis.text.y=element_blank()) + 
+  inset1 + inset2 + inset3 +  
+  plot_layout(guides = "collect", ncol=3)
+
+# Combining cannonical
+cannonical1 <- taiaroa_3junctions_cannonical + theme(plot.title = element_blank())
+cannonical2 <-  kim_3junctions_cannonical + theme(axis.title.y=element_blank(),
+                              axis.text.y=element_blank(),
+                              plot.title = element_blank())
+cannonical3 <- davidson_3junctions_cannonical + theme(axis.title.y=element_blank(),
+                              axis.text.y=element_blank(),
+                              plot.title = element_blank())
+
+
+canonical <- cannonical1 + cannonical2 + cannonical3 +
+  plot_layout(guides = "collect", ncol=3)
+
+# Final assembled figure!!
+figure1_junctions <- 
+  all_junctions_combined /canonical
+ggsave("figure1_junctions.pdf", figure1_junctions, width = 20, height=20, units="cm")
+ggsave("figure1_junctions.svg", figure1_junctions, width = 20, height=20, units="cm")
+
+```
+
+
+# Assembling tenOever illumina junction figures
+```{r}
+
+
+# Formating the insets
+short_inset1 <- SRR11517741_inset
+short_inset2 <- SRR11517742_inset + theme(axis.title.y=element_blank(),
+                            axis.text.y=element_blank())
+short_inset3 <- SRR11517743_inset + theme(axis.title.y=element_blank(),
+                            axis.text.y=element_blank())
+
+# Combining the 5-by-3 junctions
+short_all_junctions_combined <- 
+  SRR11517741_all_junctions + 
+  SRR11517742_all_junctions + theme(axis.title.y=element_blank(),
+                            axis.text.y=element_blank()) + 
+  SRR11517743_all_junctions + theme(axis.title.y=element_blank(),
+                            axis.text.y=element_blank()) + 
+  short_inset1 + short_inset2 + short_inset3 +  
+  plot_layout(guides = "collect", ncol=3)
+
+
+# Combining cannonical
+short_cannonical1 <- SRR11517741_3junctions_cannonical + theme(plot.title = element_blank())
+short_cannonical2 <-  SRR11517742_3junctions_cannonical + theme(axis.title.y=element_blank(),
+                              axis.text.y=element_blank(),
+                              plot.title = element_blank())
+short_cannonical3 <- SRR11517743_3junctions_cannonical + theme(axis.title.y=element_blank(),
+                              axis.text.y=element_blank(),
+                              plot.title = element_blank())
+short_canonical <- short_cannonical1 + short_cannonical2 + short_cannonical3 +
+  plot_layout(guides = "collect", ncol=3)
+
+
+# Assemble everything
+short_junctions <- 
+  short_all_junctions_combined /short_canonical
+
+ggsave("short_junctions.pdf", short_junctions, width = 20, height=20, units="cm")
+ggsave("short_junctions.svg", short_junctions, width = 20, height=20, units="cm")
+```
+
+
+# Importing coverage
+```{r}
+taiaroa_cov <- read_delim("inputs/taiaroa_mapped_mapped.cov", delim="\t", col_names=c("genome", "position", "coverage"))
+kim_cov <- read_delim("inputs/kim_mapped_mapped.cov", delim="\t", col_names=c("genome", "position", "coverage"))
+davidson_cov <- read_delim("inputs/davidson_mapped_mapped.cov", delim="\t", col_names=c("genome", "position", "coverage"))
+
+SRR11517741_cov <- read_delim("inputs/SRR11517741.cov", delim="\t", col_names=c("genome", "position", "coverage"))
+SRR11517742_cov <- read_delim("inputs/SRR11517742.cov", delim="\t", col_names=c("genome", "position", "coverage"))
+SRR11517743_cov <- read_delim("inputs/SRR11517743.cov", delim="\t", col_names=c("genome", "position", "coverage"))
+
+ 
+```
+
+
+
+# Option 1 - Plotting ORF1a junctions vs coverage for 3short read and 3 long read datasets
+```{r}
+
+# Make gene map including only ORF1a, 1b, and S
+sars2_orf1a_gene <- tibble(
+  molecule = "SARS-CoV2_ORF1a",
+  gene = c("ORF1a", "ORF1b", "S"),
+  start = c(266, 13468, 21563),
+  end = c(13483, 21555, 25384),
+  strand = "forward",
+  direction = 1
+)
+
+
+plot_coverage_and_juncs <- function(juncs, cov, arrow_height=200000, ymax=200000){
+  ggplot() +
+    stat_bin(data=juncs%>%filter(five>=240, five<=25384),
+                   aes(x=five, y=cumsum(..count..)),
+                   geom='line', 
+                   color="red") +
+    theme_minimal() + ylab("Count") + xlab("5'") +
+    geom_line(data=cov %>% filter(position<=25384),
+              aes(x=position, y=coverage)) +
+    geom_gene_arrow(data = sars2_orf1a_gene, aes(xmin = start, xmax = end, y = arrow_height, fill = gene, label=gene)) +
+    scale_fill_manual(values=c("#7DCEA0", "#F6DDCC", "#BFC9CA")) +
+    geom_vline(xintercept = c(226, 13468, 13483, 21555, 25384) , 
+                color = "black",
+                size=0.2,
+                alpha=0.8,
+                linetype="dashed") +
+  scale_y_continuous(labels=comma) +
+  coord_cartesian(ylim=c(1,ymax))
+}
+
+taiaroa_ORF1a_cov_and_juncs <- plot_coverage_and_juncs(taiaroa, taiaroa_cov, 5000, 5000)
+kim_ORF1a_cov_and_juncs <- plot_coverage_and_juncs(kim, kim_cov, 25000, 25000)
+davidson_ORF1a_cov_and_juncs <- plot_coverage_and_juncs(davidson, davidson_cov, 20000, 20000)
+
+SRR11517741_ORF1a_cov_and_juncs <- plot_coverage_and_juncs(SRR11517741, SRR11517741_cov, 280000, 280000)
+SRR11517742_ORF1a_cov_and_juncs <- plot_coverage_and_juncs(SRR11517742, SRR11517742_cov, 65000, 65000)
+SRR11517743_ORF1a_cov_and_juncs <- plot_coverage_and_juncs(SRR11517743, SRR11517743_cov, 60000, 60000)
+
+```
+
+
+# Because I can't predict ORFs, from short-read data, lets at least look at where the 1A-originating junctions end up.
+```{r}
+plot_ORF1a_originating_3prime_junctions <- function(in_tbl, arrow_heigh=30000) {
+
+ggplot() +
+    geom_histogram(data=in_tbl%>%filter(five>=240, five<=13483, three>21000),
+                   aes(x=three),
+                   binwidth = 30) +
+      scale_fill_manual(values=c("#BFC9CA", "#A93226", "#9B59B6", "#AED6F1", "#2471A3", "#48C9B0", "#1E8449", "#F7DC6F", "#AF601A" , "#5D6D7E"))  +
+    theme_minimal() + ylab("Count") + xlab("3'") +
+  geom_gene_arrow(data = sars2_genes, aes(xmin = start, xmax = end, y = arrow_heigh, fill = gene, label=gene)) +
+  geom_vline(xintercept = c(21563, 25393, 26245, 26523, 27202, 27394, 27756, 27894, 28274,29558) , 
+              color = "black",
+              size=0.2,
+              alpha=0.8,
+              linetype="dashed")
+  
+}
+
+SRR11517741_ORF1a_originating <- plot_ORF1a_originating_3prime_junctions(SRR11517741, 18000)
+SRR11517742_ORF1a_originating <- plot_ORF1a_originating_3prime_junctions(SRR11517743, 5000)
+SRR11517743_ORF1a_originating <- plot_ORF1a_originating_3prime_junctions(SRR11517743, 5000)
+
+taiaroa_ORF1a_originating <- plot_ORF1_originating_3prime_junctions(taiaroa, 250)
+kim_ORF1a_originating <- plot_ORF1_originating_3prime_junctions(kim, 1000)
+davidson_ORF1a_originating <- plot_ORF1_originating_3prime_junctions(davidson, 1200)
+
+```
+
+# Assembling ORF1a junction/cov figures
+```{r}
+ORF1a_cov_and_juncs_arranged <- taiaroa_ORF1a_cov_and_juncs + taiaroa_ORF1a_originating + theme(axis.title.y=element_blank()) + 
+  kim_ORF1a_cov_and_juncs + kim_ORF1a_originating + theme(axis.title.y=element_blank()) +
+  davidson_ORF1a_cov_and_juncs + davidson_ORF1a_originating + theme(axis.title.y=element_blank()) + 
+  SRR11517741_ORF1a_cov_and_juncs + SRR11517741_ORF1a_originating + theme(axis.title.y=element_blank()) +
+  SRR11517742_ORF1a_cov_and_juncs + SRR11517742_ORF1a_originating + theme(axis.title.y=element_blank()) +
+  SRR11517743_ORF1a_cov_and_juncs + SRR11517743_ORF1a_originating + theme(axis.title.y=element_blank()) +
+  plot_layout(guides = "collect", ncol=2, nrow=6)
+
+ggsave("ORF1a_cov_and_juncs.pdf", ORF1a_cov_and_juncs_arranged, height=30, width=20, units="cm")
+ggsave("ORF1a_cov_and_juncs.svg", ORF1a_cov_and_juncs_arranged, height=30, width=20, units="cm")
+```
+
+# Zoom-in of short reads cov and juncs chart for supplement
+```{r}
+short_zoomed_cov_and_juncs_arranged <- SRR11517741_ORF1a_cov_and_juncs + coord_cartesian(ylim=c(1, 120000)) +
+
+SRR11517742_ORF1a_cov_and_juncs + coord_cartesian(ylim=c(1, 25000)) + 
+
+SRR11517743_ORF1a_cov_and_juncs + coord_cartesian(ylim=c(1, 25000)) & theme(legend.position="NA")
+
+ggsave("ORF1a_cov_and_juncs_SHORT_ZOOMED.pdf", short_zoomed_cov_and_juncs_arranged, height=10, width=20, units="cm")
+ggsave("ORF1a_cov_and_juncs_SHORT_ZOOMED.svg", short_zoomed_cov_and_juncs_arranged, height=10, width=20, units="cm")
+```
+
+
+# Importing junction and coverage for CoV 229E
+```{r}
+CoV_229E_juncs <- read_delim("inputs/229E_long_junctions.txt", delim="\t")
+colnames(CoV_229E_juncs) <- c("read_name", "five", "three")
+
+CoV_229E_cov <- read_delim("inputs/229E_long.cov", delim="\t", col_names=c("genome", "position", "coverage"))
+```
+
+# Plotting junctions and coverage for CoV 229E
+```{r}
+
+# Make gene map including only ORF1a, 1b, and S
+CoV_229E_orf1a_gene <- tibble(
+  molecule = "SARS-CoV2_ORF1a",
+  gene = c("ORF1a", "ORF1b", "S"),
+  start = c(293, 12520, 20570),
+  end = c(12520, 20568, 24091),
+  strand = "forward",
+  direction = 1
+)
+
+plot_coverage_and_juncs_229E <- function(juncs, cov, arrow_height=200000, ymax=200000){
+  ggplot() +
+    stat_bin(data=juncs%>%filter(five>=293, five<=24091),
+                   aes(x=five, y=cumsum(..count..)),
+                   geom='line', 
+                   color="red") +
+    theme_minimal() + ylab("Count") + xlab("5'") +
+    geom_line(data=cov %>% filter(position<=24091),
+              aes(x=position, y=coverage)) +
+    geom_gene_arrow(data = CoV_229E_orf1a_gene, aes(xmin = start, xmax = end, y = arrow_height, fill = gene, label=gene)) +
+    scale_fill_manual(values=c("#7DCEA0", "#F6DDCC", "#BFC9CA")) +
+    geom_vline(xintercept = c(293, 12520, 12520, 20568, 20570, 24091) , 
+                color = "black",
+                size=0.2,
+                alpha=0.8,
+                linetype="dashed") +
+  scale_y_continuous(labels=comma) +
+  coord_cartesian(ylim=c(1,ymax))
+}
+
+CoV_229E_cov_and_juncs_plt <- plot_coverage_and_juncs_229E(CoV_229E_juncs, CoV_229E_cov, 16000, 16000) 
+
+#geom_vline(xintercept=c(620, 3200), color="Blue", linetype="dashed")
+# First inflection happens just after nsp1 around position 620, and second inflection happens just after nsp2 around 3200
+
+ggsave("229E_cov_and_juncs.pdf", CoV_229E_cov_and_juncs_plt, height=10, width=15, units="cm")
+ggsave("229E_cov_and_juncs.svg", CoV_229E_cov_and_juncs_plt, height=10, width=15, units="cm")
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+# TMP - looking at S junctinos
+```{r}
+
+sars2_orf1a_gene <- tibble(
+  molecule = "SARS-CoV2_ORF1a",
+  gene = c("ORF1a", "ORF1b", "S"),
+  start = c(266, 13468, 21563),
+  end = c(13483, 21555, 25384),
+  strand = "forward",
+  direction = 1
+)
+
+
+ggplot() +
+    geom_histogram(data=kim%>%filter(three>=21563, three<=25350),
+                   aes(x=three),
+                   binwidth = 20) +
+      scale_fill_manual(values=c("#BFC9CA", "#A93226", "#9B59B6", "#AED6F1", "#2471A3", "#48C9B0", "#1E8449", "#F7DC6F", "#AF601A" , "#5D6D7E"))  +
+    theme_minimal() + ylab("Count") + xlab("3'")
+
+ggplot() +
+    geom_histogram(data=davidson%>%filter(three>=21563, three<=25350),
+                   aes(x=three),
+                   binwidth = 20) +
+      scale_fill_manual(values=c("#BFC9CA", "#A93226", "#9B59B6", "#AED6F1", "#2471A3", "#48C9B0", "#1E8449", "#F7DC6F", "#AF601A" , "#5D6D7E"))  +
+    theme_minimal() + ylab("Count") + xlab("3'") 
+
+```
+
