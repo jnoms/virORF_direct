@@ -2,13 +2,13 @@
 virORF_direct: Protein-level analysis of direct RNA sequencing data.
 
 ## Description
-This repository and pipeline is sufficient to reproduce the work reported in the manuscript [...]
+This repository and pipeline is sufficient to reproduce the work reported in the manuscript "Noncanonical junctions in subgenomic RNAs of SARS-CoV-2 lead to variant open reading frames."
 
 The purpose of this pipeline is to process direct RNA sequencing (dRNAseq) reads from SARS-CoV-2-infected cells. This script maps the reads against the SARS-CoV-2 genome and generates coordinate-derived transcripts and junction coordinates from these alignments. 
 
 Coordinate-derived transcripts are used to characterize the viral open reading frames (ORFs) present in the input dRNAseq transcriptome. ORFs are predicted from each coordinate-derived transcript using prodigal, prodigal ORFs are processed to generate protein sequences, and these protein sequences are mapped against annotated and predicted SARS-CoV-2 proteins using the DIAMOND aligner. This pipeline then incorporates a script to process the resultant DIAMOND alignments into a series of output files which can be visualized as desired. In addition, this pipeline predicts common TRS sequences from the junction coordinates generated at the coordinate-derived transcripts generation step.
 
-R-markdown files used to generate the figures present in the manuscript [...] are present in bin/R and are not run automatically.
+R-markdown files used to generate the figures present in the manuscript "Noncanonical junctions in subgenomic RNAs of SARS-CoV-2 lead to variant open reading frames" are present in bin/R and are not run automatically.
 
 All python and bash scripts can be run independently. Execute any python script (with -h) or bash script (without arguments) for detailed instructions on how to run them.
 
