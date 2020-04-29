@@ -127,78 +127,6 @@ sars2_genes_plt_TRS_lines <- ggplot(sars2_genes, aes(xmin = start, xmax = end, y
   geom_vline(xintercept=c(21555, 25384,26236, 26472, 27040, 27387, 27887, 28259))
 ggsave("genome_maps/genes_w_TRS_lines.pdf", sars2_genes_plt_TRS_lines)
 ggsave("genome_maps/genes_w_TRS_lines.svg", sars2_genes_plt_TRS_lines)
-
-
-# ACGAAC
-# <_sre.SRE_Match object; span=(69, 75), match='ACGAAC'>
-# <_sre.SRE_Match object; span=(21555, 21561), match='ACGAAC'>
-# <_sre.SRE_Match object; span=(25384, 25390), match='ACGAAC'>
-# <_sre.SRE_Match object; span=(26236, 26242), match='ACGAAC'>
-# <_sre.SRE_Match object; span=(26472, 26478), match='ACGAAC'>
-# <_sre.SRE_Match object; span=(27040, 27046), match='ACGAAC'>
-# <_sre.SRE_Match object; span=(27387, 27393), match='ACGAAC'>
-# <_sre.SRE_Match object; span=(27887, 27893), match='ACGAAC'>
-# <_sre.SRE_Match object; span=(28259, 28265), match='ACGAAC'>
-
-# # Function for more concise plotting
-# 
-# position <- 4
-# 
-# 
-# plot_subgenomic_rnas <- function(position, path){
-#   
-#   genes <- c("Leader", "ORF1AB", "S", "ORF3a", "E", "M", "ORF6", "ORF7A", "ORF7B", "ORF8", "N", "ORF10")
-#   starts <- c(14, 266, 21563, 25393, 26245, 26523, 27202, 27394, 27756, 27894, 28274, 29558)
-#   ends <- c(75, 21555, 25384, 26220, 26472, 27191, 27387, 27759, 27887, 28259, 29533, 29674)
-#   colors <-  c("#000000", "#F6DDCC", "#BFC9CA", "#A93226", "#9B59B6", "#AED6F1", "#2471A3", "#48C9B0", "#1E8449", "#F7DC6F", "#AF601A" , "#5D6D7E")
-#   
-#   if (position > 1){
-#     len_leader <- ends[1] - starts[1]
-#     starts <- c(starts[1], starts[position:length(starts)])
-#     ends <- c(ends[1], ends[position:length(ends)])
-#     
-#     starts[1] <- starts[2] - len_leader
-#     ends[1] <- starts[2]
-#     
-#     colors <- c(colors[1], colors[position:length(colors)])
-#     
-#     genes <- c(genes[1], genes[position:length(genes)])
-#   }
-#   
-#   
-#   starts
-#   ends
-#   
-#   map <- tibble(
-#     molecule = "SARS-CoV2",
-#     gene = factor(genes, levels=genes, ordered = T),
-#     start = starts,
-#     end = ends,
-#     strand = "forward",
-#     direction = 1
-#   )
-#   
-#   map_plt <- ggplot(map, aes(xmin = start, xmax = end, y =
-#                                               molecule, fill = gene, label = gene)) +
-#     geom_gene_arrow(arrowhead_height = unit(3, "mm"), arrowhead_width = unit(1, "mm")) +
-#     theme_genes() +
-#     scale_fill_manual(values=colors)
-#   
-#   ggsave(path, map_plt)
-# 
-# }
-# 
-# plot_subgenomic_rnas(3, "genome_maps/S.svg")
-# plot_subgenomic_rnas(4, "genome_maps/ORF3A.svg")
-# plot_subgenomic_rnas(5, "genome_maps/E.svg")
-# plot_subgenomic_rnas(6, "genome_maps/M.svg")
-# plot_subgenomic_rnas(7, "genome_maps/ORF6.svg")
-# plot_subgenomic_rnas(8, "genome_maps/ORF7A.svg")
-# plot_subgenomic_rnas(9, "genome_maps/ORF7B.svg")
-# plot_subgenomic_rnas(10, "genome_maps/ORF8.svg")
-# plot_subgenomic_rnas(11, "genome_maps/N.svg")
-# plot_subgenomic_rnas(12, "genome_maps/ORF10.svg")
-
 ```
 
 
@@ -230,11 +158,6 @@ kim_all_junctions
 
 davidson_all_junctions <- plot_all_junctions_2d_histogram(davidson)
 davidson_all_junctions
-
-
-
-
-#ggsave("figures/davidson_all_junctions.pdf", davidson_all_junctions, width=10, height=10)
 ```
 
 # Long read - 5' 100bp  2d histograms
