@@ -252,16 +252,23 @@ def dict_to_fasta(in_dict, path):
     with open(path, "w") as outfile:
         outfile.write(fasta)
 
-def gen_junction_df(alignment_dict):
+def gen_junction_df(alignment_dict, output_read_coordinates=False):
     """
     The alignment dict contains coordinates for the corrected
     read start, junctions, and end. This function extracts
     the junctions to a pandas dataframe with the columns
     'read_name', '5-end', '3-end'
+
+    If output_read_coordinates == True, the output columns are
+    read_name, 5-end, 3-end, read_start, read_end
     """
 
     # Initiate the output
-    output = ["read_name", "5-end", '3-end']
+    if output_read_coordinates == False:
+        output = ["read_name", "5-end", '3-end']
+    else:
+        output = ["read_name", "5-end", '3-end', "read_start", "read_end"]
+
     output = '\t'.join(output) + '\n'
 
     for header, coords in alignment_dict.items():
@@ -271,7 +278,10 @@ def gen_junction_df(alignment_dict):
 
             junc_start, junc_end = junc
 
-            output += "{}\t{}\t{}\n".format(header, junc_start, junc_end)
+            if output_read_coordinates == False:
+                output += "{}\t{}\t{}\n".format(header, junc_start, junc_end)
+            else:
+                output += "{}\t{}\t{}\t{}\t{}\n".format(header, junc_start, junc_end, start, end)
 
     # return output as a pandas dataframe
     return pd.read_csv(StringIO(output), sep="\t")
@@ -357,6 +367,17 @@ def main():
         that will be considered a junction.
         '''
     )
+    parser.add_argument(
+        '-r',
+        '--output_read_coordinates',
+        type=bool,
+        required=False,
+        default=False,
+        help='''
+        If False, the junction file has columns: read_name, 5'-end, 3'-end.
+        If True, the columns are: read_name, 5'-end, 3'-end, read_start, read_end
+        '''
+    )
 
     args = parser.parse_args()
 
@@ -366,6 +387,7 @@ def main():
     output_fasta = args.output_fasta
     junction_path = args.junction_path
     min_intron_length = args.min_intron_length
+    output_read_coordinates = args.output_read_coordinates
 
     # Constants
     #--------------------------------------------------------------------------#
@@ -404,7 +426,7 @@ def main():
 
     # Generate junction df and save to output
     print("{}: Writing out junctions.".format(sys.argv[0]))
-    junction_df = gen_junction_df(alignment_dict)
+    junction_df = gen_junction_df(alignment_dict, output_read_coordinates)
     save_junction_df(junction_df, junction_path)
 
     print("{}: Finished..".format(sys.argv[0]))
