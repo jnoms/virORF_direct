@@ -1,0 +1,694 @@
+---
+title: "SARS-CoV-2: Visualization of long-read junctions."
+---
+
+# Load libraries
+```{r}
+library(tidyverse)
+library(scales) #allows use of "comma" to replace i.e. 1e6 with 1,000,000 during plotting
+
+library(pheatmap)
+library(patchwork) # allows composing/orienting plots
+library(RColorBrewer)
+
+# geneplots
+library(gggenes)
+
+
+library(reshape2) #for melt function
+library(ggrepel) # labeling points on a dotplot
+
+library(hashmap) # use column as key for another column
+
+```
+
+# gggenes tibbles
+```{r}
+sars2_orf1a_gene <- tibble(
+  molecule = "SARS-CoV2_ORF1a",
+  gene = c("ORF1a", "ORF1b", "S"),
+  start = c(266, 13468, 21563),
+  end = c(13483, 21555, 25384),
+  strand = "forward",
+  direction = 1
+)
+
+sars2_genes <- tibble(
+  molecule = "SARS-CoV2",
+  gene = c("S", "ORF3a", "E", "M", "ORF6", "ORF7A", "ORF7B", "ORF8", "N", "ORF10"),
+  start = c(21563, 25393, 26245, 26523, 27202, 27394, 27756, 27894, 28274, 29558),
+  end = c(25384, 26220, 26472, 27191, 27387, 27759, 27887, 28259, 29533, 29674),
+  strand = "forward",
+  direction = 1
+)
+# Specify order of gene for plotting
+sars2_genes$gene <- factor(sars2_genes$gene, levels=c("S", "ORF3a", "E", "M", "ORF6", "ORF7A", "ORF7B", "ORF8", "N", "ORF10"), ordered = T)
+
+sars2_ALL_genes <- tibble(
+  molecule = "SARS-CoV2",
+  gene = c("ORF1a", "ORF1b","S", "ORF3a", "E", "M", "ORF6", "ORF7A", "ORF7B", "ORF8", "N", "ORF10"),
+  start = c(266, 13468, 21563, 25393, 26245, 26523, 27202, 27394, 27756, 27894, 28274, 29558),
+  end = c(13483, 21555,25384, 26220, 26472, 27191, 27387, 27759, 27887, 28259, 29533, 29674),
+  strand = "forward",
+  direction = 1
+)
+# Specify order of gene for plotting
+sars2_ALL_genes$gene <- factor(sars2_ALL_genes$gene, levels=c("ORF1a", "ORF1b", "S", "ORF3a", "E", "M", "ORF6", "ORF7A", "ORF7B", "ORF8", "N", "ORF10"), ordered = T)
+```
+
+# IMPORT dRNAseq (minimap2 mapped)
+```{r}
+taiaroa <- read_delim("inputs/taiaroa_mapped_junctions.tsv", delim="\t")
+kim <- read_delim("inputs/kim_mapped_junctions.tsv", delim="\t")
+davidson <- read_delim("inputs/davidson_mapped_junctions.tsv", delim="\t")
+
+colnames(taiaroa) <- c("read_name", "five", "three")
+colnames(kim) <- c("read_name", "five", "three")
+colnames(davidson) <- c("read_name", "five", "three")
+
+
+label_genes_by_3prime <- function(in_tbl) {
+  in_tbl %>%
+    mutate(gene = "Intergenic") %>%
+    mutate(gene = ifelse(three>=21563, ifelse(three<=25384,"1. S", "Intergenic" ), "Intergenic")) %>%
+    mutate(gene = ifelse(three>=25393, ifelse(three<=26220,"2. ORF3a", gene ), gene)) %>%
+    mutate(gene = ifelse(three>=26245, ifelse(three<=26472,"3. E", gene ), gene)) %>%
+    mutate(gene = ifelse(three>=26523, ifelse(three<=27191,"4. M", gene ), gene)) %>%
+    mutate(gene = ifelse(three>=27202, ifelse(three<=27387,"5. ORF6", gene ), gene)) %>%
+    mutate(gene = ifelse(three>=27394, ifelse(three<=27887,"6. ORF7a/b", gene ), gene)) %>%
+    mutate(gene = ifelse(three>=27894, ifelse(three<=28259,"7. ORF8", gene ), gene)) %>%
+    mutate(gene = ifelse(three>=28274, ifelse(three<=29533,"8. N", gene ), gene)) %>%
+    mutate(gene = ifelse(three>=29558, ifelse(three<=29674,"9. ORF10", gene ), gene))
+}
+
+
+
+# Label genes by their 3' junctions
+davidson <- label_genes_by_3prime(davidson)
+
+taiaroa <- label_genes_by_3prime(taiaroa) 
+
+kim <- label_genes_by_3prime(kim)
+
+
+# Calculate junction length for each
+davidson <- davidson %>%
+  mutate(junction_length=three-five)
+
+taiaroa <- taiaroa %>%
+  mutate(junction_length=three-five)
+
+kim <- kim %>%
+  mutate(junction_length=three-five)
+```
+
+# IMPORT Blanco-Melo short read data (minimap2 mapped)
+```{r}
+SRR11517741 <- read_delim("inputs/SRR11517741_junctions.txt", delim="\t")
+SRR11517742 <- read_delim("inputs/SRR11517742_junctions.txt", delim="\t")
+SRR11517743 <- read_delim("inputs/SRR11517743_junctions.txt", delim="\t")
+
+
+colnames(SRR11517741) <- c("read_name", "five", "three")
+colnames(SRR11517742) <- c("read_name", "five", "three")
+colnames(SRR11517743) <- c("read_name", "five", "three")
+
+SRR11517741 <- label_genes_by_3prime(SRR11517741)
+SRR11517742 <- label_genes_by_3prime(SRR11517742)
+SRR11517743 <- label_genes_by_3prime(SRR11517743)
+```
+
+# IMPORT Blanco-Melo ferret data (minimap2 mapped)
+```{r}
+#Importing
+ferret_cov <- read_delim("inputs/blanco_melo_ferret/SRR11517855_8_ferret.cov", delim="\t", col_names=c("genome", "position", "coverage"))
+ferret_junc <- read_delim("inputs/blanco_melo_ferret/SRR11517855_8_ferret.junctions.txt", delim="\t")
+colnames(ferret_junc) <- c("name", 'five', 'three')
+```
+
+
+# IMPORT Finkel 4hpi, 24hpi (STAR mapped)
+```{r}
+# Import
+finkel_5hpi_1_cov <- read_delim("inputs/finkel/mRNA5_1.cov", delim="\t", col_names=c("genome", "position", "coverage"))
+finkel_5hpi_2_cov <- read_delim("inputs/finkel/mRNA5_2.cov", delim="\t", col_names=c("genome", "position", "coverage"))
+finkel_24hpi_1_cov <- read_delim("inputs/finkel/mRNA24_1.cov", delim="\t", col_names=c("genome", "position", "coverage"))
+finkel_24hpi_2_cov <- read_delim("inputs/finkel/mRNA24_2.cov", delim="\t", col_names=c("genome", "position", "coverage"))
+
+
+finkel_5hpi_1_junc <- read_delim("inputs/finkel/mRNA5_1.junctions.txt", delim="\t")
+finkel_5hpi_2_junc <- read_delim("inputs/finkel/mRNA5_2.junctions.txt", delim="\t")
+finkel_24hpi_1_junc <- read_delim("inputs/finkel/mRNA24_1.junctions.txt", delim="\t")
+finkel_24hpi_2_junc <- read_delim("inputs/finkel/mRNA24_2.junctions.txt", delim="\t")
+colnames(finkel_5hpi_1_junc) <- c("name", 'five', 'three')
+colnames(finkel_5hpi_2_junc) <- c("name", 'five', 'three')
+colnames(finkel_24hpi_1_junc) <- c("name", 'five', 'three')
+colnames(finkel_24hpi_2_junc) <- c("name", 'five', 'three')
+```
+
+# IMPORT Emanuel 4hpi, 24hpi (STAR mapped)
+```{r}
+emanual_total_4hpi_1_cov <- read_delim("inputs/emanual_totalRNA/SRR11550047.cov", delim="\t", col_names=c("genome", "position", "coverage"))
+emanual_total_4hpi_2_cov <- read_delim("inputs/emanual_totalRNA/SRR11550048.cov", delim="\t", col_names=c("genome", "position", "coverage"))
+emanual_total_12hpi_1_cov <- read_delim("inputs/emanual_totalRNA/SRR11550043.cov", delim="\t", col_names=c("genome", "position", "coverage"))
+emanual_total_12hpi_2_cov <- read_delim("inputs/emanual_totalRNA/SRR11550044.cov", delim="\t", col_names=c("genome", "position", "coverage"))
+emanual_total_24hpi_1_cov <- read_delim("inputs/emanual_totalRNA/SRR11550045.cov", delim="\t", col_names=c("genome", "position", "coverage"))
+emanual_total_24hpi_2_cov <- read_delim("inputs/emanual_totalRNA/SRR11550046.cov", delim="\t", col_names=c("genome", "position", "coverage"))
+
+emanual_total_4hpi_1_junc <- read_delim("inputs/emanual_totalRNA/SRR11550047.junctions.txt", delim="\t")
+emanual_total_4hpi_2_junc <- read_delim("inputs/emanual_totalRNA/SRR11550048.junctions.txt", delim="\t")
+emanual_total_12hpi_1_junc <- read_delim("inputs/emanual_totalRNA/SRR11550043.junctions.txt", delim="\t")
+emanual_total_12hpi_2_junc <- read_delim("inputs/emanual_totalRNA/SRR11550044.junctions.txt", delim="\t")
+emanual_total_24hpi_1_junc <- read_delim("inputs/emanual_totalRNA/SRR11550045.junctions.txt", delim="\t")
+emanual_total_24hpi_2_junc <- read_delim("inputs/emanual_totalRNA/SRR11550046.junctions.txt", delim="\t")
+colnames(emanual_total_4hpi_1_junc) <- c("name", 'five', 'three')
+colnames(emanual_total_4hpi_2_junc) <- c("name", 'five', 'three')
+colnames(emanual_total_12hpi_1_junc) <- c("name", 'five', 'three')
+colnames(emanual_total_12hpi_2_junc) <- c("name", 'five', 'three')
+colnames(emanual_total_24hpi_1_junc) <- c("name", 'five', 'three')
+colnames(emanual_total_24hpi_2_junc) <- c("name", 'five', 'three')
+```
+# IMPORT Emmanual polyA timecourse (STAR mapped)
+```{r}
+
+```
+
+
+# IMPORT Suzuki organoids (minimap2 mapped)
+```{r}
+# Import
+suzuki_bronchial_5dpi_1_cov <- read_delim("inputs/suzuki_bronchial_organoids/minimap2/SRR11811022.cov", delim="\t", col_names=c("genome", "position", "coverage"))
+suzuki_bronchial_5dpi_2_cov <- read_delim("inputs/suzuki_bronchial_organoids/minimap2/SRR11811023.cov", delim="\t", col_names=c("genome", "position", "coverage"))
+suzuki_bronchial_5dpi_3_cov <- read_delim("inputs/suzuki_bronchial_organoids/minimap2/SRR11811024.cov", delim="\t", col_names=c("genome", "position", "coverage"))
+
+
+suzuki_bronchial_5dpi_1_junc <- read_delim("inputs/suzuki_bronchial_organoids/minimap2/SRR11811022.junctions.txt", delim="\t")
+suzuki_bronchial_5dpi_2_junc <- read_delim("inputs/suzuki_bronchial_organoids/minimap2/SRR11811023.junctions.txt", delim="\t")
+suzuki_bronchial_5dpi_3_junc <- read_delim("inputs/suzuki_bronchial_organoids/minimap2/SRR11811024.junctions.txt", delim="\t")
+
+colnames(suzuki_bronchial_5dpi_1_junc) <- c("name", 'five', 'three')
+colnames(suzuki_bronchial_5dpi_2_junc) <- c("name", 'five', 'three')
+colnames(suzuki_bronchial_5dpi_3_junc) <- c("name", 'five', 'three')
+```
+
+
+# Identify dataset-specific 5' junctions
+```{r}
+# Function - Takes the input tibble, tallys # 5' junctions
+# at each position EXCLUDING junctions within 20bp of start of canonical TRS-L (pos 69), and then
+# finds percentage of non-leader 5' junctions
+to_5percentage <- function(in_tbl, name) {
+  out <- in_tbl %>%
+    filter( !(five >49 & five <89) )  %>%      ###################################################### be mindful of this
+    group_by(five) %>% 
+    tally() %>%
+    mutate(percentage = 100*n/sum(n))
+  
+  out$n <- NULL
+  
+  colnames(out) <- c("five", "percentage")
+  out$name <- name
+  
+  out %>%
+    select(name, five, percentage)
+}
+
+
+# Convert tibbles to percentages
+taiaroa_5percentages <- to_5percentage(taiaroa, 'Taiaroa')
+kim_5percentages <- to_5percentage(kim, 'Kim')
+davidson_5percentages <- to_5percentage(davidson, "Davidson")
+finkel_24hpi_1_junc_5percentages <- to_5percentage(finkel_24hpi_1_junc, "Finkel")
+SRR11517741_percentages <-  to_5percentage(SRR11517741, "Blanco-Melo")
+
+# Merge them
+merged_5percentages <-
+  bind_rows(
+    taiaroa_5percentages,
+    kim_5percentages,
+    davidson_5percentages,
+    finkel_24hpi_1_junc_5percentages,
+    SRR11517741_percentages
+  )
+
+# If a position is present in at least one dataset, other datasets with
+# that position get percentage filled with 0
+# This doesn't fill in positions not present in any of the datasets though.
+merged_5percentages <- merged_5percentages %>%
+  complete(five, name, fill=list(percentage =0))
+
+# Calculate means and standard deviations for each position
+merged_5percentages_statistics <- merged_5percentages %>%
+  group_by(five) %>%
+  summarize(mean = mean(percentage),
+            stdev = sd(percentage))
+
+# Now calculate z score for each
+get_mean_from_tbl <- function(in_tbl, position){
+  in_tbl %>%
+    filter(five == position) %>%
+    pull(mean)
+}
+get_sd_from_tbl <- function(in_tbl, position){
+  in_tbl %>%
+    filter(five == position) %>%
+    pull(stdev)
+}
+
+
+# Load statistics
+merged_5percentages <- merged_5percentages %>%
+  rowwise() %>%
+  mutate(pos_mean = get_mean_from_tbl(merged_5percentages_statistics, five)) %>%
+  mutate(pos_sd = get_sd_from_tbl(merged_5percentages_statistics, five))
+
+# Calculate zscore
+merged_5percentages <- merged_5percentages %>%
+  mutate(z = (percentage - pos_mean)/pos_sd)
+
+
+# Plot!
+
+
+merged_5percentages <- merged_5percentages %>%
+  mutate(status=ifelse(percentage > 4 & abs(z) >1, name, "Normal"))
+
+merged_5percentages$status <- factor(merged_5percentages$status,
+                                     ordered=T,
+                                     levels = c("Blanco-Melo",
+                                                "Davidson",
+                                                "Finkel",
+                                                "Kim",
+                                                "Taiaroa",
+                                                "Normal"
+                                                ))
+merged_5percentages$name <- factor(merged_5percentages$name,
+                                     ordered=T,
+                                     levels = c("Blanco-Melo",
+                                                "Davidson",
+                                                "Finkel",
+                                                "Kim",
+                                                "Taiaroa"
+                                                ))
+
+ID_dataset_specific_junctions_5_plt <- merged_5percentages %>% filter(percentage != 0) %>% # remove 0percent points to reduce file size..
+  ggplot() +
+    geom_point(aes(x=z, y=percentage, color=status), size=0.9) +
+    theme_minimal(base_size=12) +
+    geom_vline(xintercept = c(-1, 1), color="grey", alpha=1, linetype="dashed") +
+    geom_hline(yintercept = 4, color="grey", alpha=1, linetype="dashed") +
+    scale_color_manual(values=c("#0096C7",  "#BFC9CA")) + # grey is closest to this side..
+    geom_text(data = merged_5percentages %>% filter(percentage > 4, abs(z) >1),
+              aes(x=z, y=percentage, label=five),
+              hjust = 1.2
+                     ) +
+  ylab("Percentage of non-leader 5' junctions") + 
+  xlab("5' Junction Z-score") +
+  labs(color = "Dataset-Specific Junction") +
+  guides(colour = guide_legend(override.aes = list(size=6))) + 
+  scale_y_continuous(limits=c(NA, 15.5))
+ID_dataset_specific_junctions_5_plt
+
+ID_dataset_specific_junctions_5_plt_NOLABEL <- merged_5percentages %>% filter(percentage != 0) %>% # remove 0percent points to reduce file size..
+  ggplot() +
+    geom_point(aes(x=z, y=percentage, color=status), size=0.9) +
+    theme_minimal(base_size=12) +
+    geom_vline(xintercept = c(-1, 1), color="grey", alpha=1, linetype="dashed") +
+    geom_hline(yintercept = 4, color="grey", alpha=1, linetype="dashed") +
+    scale_color_manual(values=c("#0096C7",  "#BFC9CA")) + # grey is closest to this side..
+  ylab("Percentage of non-leader 5' junctions") + 
+  xlab("5' Junction Z-score") +
+  labs(color = "Dataset-Specific Junction") +
+  guides(colour = guide_legend(override.aes = list(size=6))) + 
+  scale_y_continuous(limits=c(NA, 15.5))
+
+ggsave("figures/dataset-specific-junctions/DSG5_volcano.pdf", ID_dataset_specific_junctions_5_plt, width=15, height=10, units = "cm")
+ggsave("figures/dataset-specific-junctions/DSG5_volcano.svg", ID_dataset_specific_junctions_5_plt, width=15, height=10, units = "cm")
+saveRDS(ID_dataset_specific_junctions_5_plt_NOLABEL, "rds/dataset_specific_junctions/DSG5_volcano.rds")
+
+
+
+
+```
+
+# Dataset specific junctions for the 3' junctions
+# Lets limit it to 3' junctions that are not within 
+# 15bp of a TRS core sequence
+```{r}
+
+# Filter threeprime junctions that are within 15bp of a core TRS sequence
+remove_canonical_3junctions <- function(in_tbl) {
+  # Removes junctions that have a 3' end within
+  # 15 nucleotides of the start of a core TRS 
+  # sequence
+  
+  out <- in_tbl %>%
+    filter(
+      !(three > 21555 - 15 & three < 21555 + 15)
+    ) %>%
+    filter(
+      !(three > 25384 - 15 & three < 25384 + 15)
+    ) %>%
+    filter(
+      !(three > 26236 - 15 & three < 26236 + 15)
+    ) %>%
+    filter(
+      !(three > 26472 - 15 & three < 26472 + 15)
+    ) %>%
+    filter(
+      !(three > 27040 - 15 & three < 27040 + 15)
+    ) %>%
+    filter(
+      !(three > 27387 - 15 & three < 27387 + 15)
+    ) %>%
+    filter(
+      !(three > 27887 - 15 & three < 27887 + 15)
+    ) %>%
+    filter(
+      !(three > 28259 - 15 & three < 28259 + 15)
+    )
+  
+  out
+}
+
+taiaroa_nc <- remove_canonical_3junctions(taiaroa)
+kim_n <- remove_canonical_3junctions(kim)
+davidson_n <- remove_canonical_3junctions(davidson)
+finkel_24hpi_1_junc_n <- remove_canonical_3junctions(finkel_24hpi_1_junc)
+SRR11517741_n <-  remove_canonical_3junctions(SRR11517741)
+
+
+# Function - Takes the input tibble, tallys # 5' junctions
+# at each position EXCLUDING THE FIRST 100bp, and then
+# finds percentage of non-leader 5' junctions
+to_3percentage <- function(in_tbl, name) {
+  out <- in_tbl %>%
+    group_by(three) %>% 
+    tally() %>%
+    mutate(percentage = 100*n/sum(n))
+  
+  out$n <- NULL
+  
+  colnames(out) <- c("three", "percentage")
+  out$name <- name
+  
+  out %>%
+    select(name, three, percentage)
+}
+
+# Convert tibbles to percentages
+taiaroa_3percentages <- to_3percentage(taiaroa_nc, 'Taiaroa')
+kim_3percentages <- to_3percentage(kim_n, 'Kim')
+davidson_3percentages <- to_3percentage(davidson_n, "Davidson")
+finkel_24hpi_1_junc_3percentages <- to_3percentage(finkel_24hpi_1_junc_n, "Finkel")
+SRR11517741_3percentages <-  to_3percentage(SRR11517741_n, "Blanco-Melo")
+
+# Merge them
+merged_3percentages <-
+  bind_rows(
+    taiaroa_3percentages,
+    kim_3percentages,
+    davidson_3percentages,
+    finkel_24hpi_1_junc_3percentages,
+    SRR11517741_3percentages
+  )
+
+# If a position is present in at least one dataset, other datasets with
+# that position get percentage filled with 0
+# This doesn't fill in positions not present in any of the datasets though.
+merged_3percentages <- merged_3percentages %>%
+  complete(three, name, fill=list(percentage =0))
+
+# Calculate means and standard deviations for each position
+merged_3percentages_statistics <- merged_3percentages %>%
+  group_by(three) %>%
+  summarize(mean = mean(percentage),
+            stdev = sd(percentage))
+
+# Now calculate z score for each
+get_mean_from_tbl <- function(in_tbl, position){
+  in_tbl %>%
+    filter(three == position) %>%
+    pull(mean)
+}
+get_sd_from_tbl <- function(in_tbl, position){
+  in_tbl %>%
+    filter(three == position) %>%
+    pull(stdev)
+}
+
+# Load statistics
+merged_3percentages <- merged_3percentages %>%
+  rowwise() %>%
+  mutate(pos_mean = get_mean_from_tbl(merged_3percentages_statistics, three)) %>%
+  mutate(pos_sd = get_sd_from_tbl(merged_3percentages_statistics, three))
+
+# Calculate zscore
+merged_3percentages <- merged_3percentages %>%
+  mutate(z = (percentage - pos_mean)/pos_sd)
+
+
+# Plot!
+merged_3percentages <- merged_3percentages %>%
+  mutate(status=ifelse(percentage > 4 & abs(z) >1, name, "Normal"))
+
+
+
+merged_3percentages$status <- factor(merged_3percentages$status,
+                                     ordered=T,
+                                     levels = c("Blanco-Melo",
+                                                "Davidson",
+                                                "Finkel",
+                                                "Kim",
+                                                "Taiaroa",
+                                                "Normal"
+                                                ))
+merged_3percentages$name <- factor(merged_3percentages$name,
+                                     ordered=T,
+                                     levels = c("Blanco-Melo",
+                                                "Davidson",
+                                                "Finkel",
+                                                "Kim",
+                                                "Taiaroa"
+                                                ))
+
+
+ID_dataset_specific_junctions_3_plt <- merged_3percentages %>%
+  ggplot() +
+    geom_point(aes(x=z, y=percentage, color=status), size=0.9) +
+    theme_minimal(base_size=12) +
+    geom_vline(xintercept = c(-1, 1), color="grey", alpha=1, linetype="dashed") +
+    geom_hline(yintercept = 4, color="grey", alpha=1, linetype="dashed") +
+    scale_color_manual(values=c("#fca311", "#BFC9CA")) + # grey is closest to this side..
+    geom_label_repel(data = merged_3percentages %>% filter(percentage > 4, abs(z) >1),
+                     aes(x=z, y=percentage, label=three),
+                     box.padding = 0.1,
+                     point.padding = 0.5,
+                     segment.color = 'grey50',
+                     xlim  = c(NA, 1),
+                     ylim = c(4, NA)
+                     ) +
+  ylab("Percentage of non-canonical 3' junctions") + 
+  xlab("3' Junction Z-score") +
+  labs(color = "Dataset-Specific Junction") +
+  guides(colour = guide_legend(override.aes = list(size=6)))  + 
+  scale_y_continuous(limits=c(NA, 15.5))
+
+
+ID_dataset_specific_junctions_3_plt_NOLABEL <- merged_3percentages %>%
+  ggplot() +
+    geom_point(aes(x=z, y=percentage, color=status), size=0.9) +
+    theme_minimal(base_size=12) +
+    geom_vline(xintercept = c(-1, 1), color="grey", alpha=1, linetype="dashed") +
+    geom_hline(yintercept = 4, color="grey", alpha=1, linetype="dashed") +
+    scale_color_manual(values=c("#fca311", "#BFC9CA")) + # grey is closest to this side..
+  ylab("Percentage of non-canonical 3' junctions") + 
+  xlab("3' Junction Z-score") +
+  labs(color = "Dataset-Specific Junction") +
+  guides(colour = guide_legend(override.aes = list(size=6)))  + 
+  scale_y_continuous(limits=c(NA, 15.5))
+
+
+ID_dataset_specific_junctions_3_plt
+ggsave("figures/dataset-specific-junctions/DSG3_volcano.pdf", ID_dataset_specific_junctions_3_plt, width=15, height=10, units = "cm")
+ggsave("figures/dataset-specific-junctions/DSG3_volcano.svg", ID_dataset_specific_junctions_3_plt, width=15, height=10, units = "cm")
+saveRDS(ID_dataset_specific_junctions_3_plt_NOLABEL, "rds/dataset_specific_junctions/DSG3_volcano.rds")
+```
+
+# Confirming 5' DSGs via barcharts
+```{r}
+# Convert tibbles to percentages
+taiaroa_5percentages <- to_5percentage(taiaroa, 'Taiaroa')
+kim_5percentages <- to_5percentage(kim, 'Kim')
+davidson_5percentages <- to_5percentage(davidson, "Davidson")
+finkel_24hpi_1_junc_5percentages <- to_5percentage(finkel_24hpi_1_junc, "Finkel_Rep1")
+finkel_24hpi_2_junc_5percentages <- to_5percentage(finkel_24hpi_2_junc, "Finkel_Rep2")
+SRR11517741_percentages <-  to_5percentage(SRR11517741, "Blanco-Melo_Rep1")
+SRR11517742_percentages <-  to_5percentage(SRR11517742, "Blanco-Melo_Rep2")
+SRR11517743_percentages <-  to_5percentage(SRR11517743, "Blanco-Melo_Rep3")
+
+
+# Merge them
+merged_5percentages_replicates <-
+  bind_rows(
+    taiaroa_5percentages,
+    kim_5percentages,
+    davidson_5percentages,
+    finkel_24hpi_1_junc_5percentages,
+    finkel_24hpi_2_junc_5percentages,
+    SRR11517741_percentages,
+    SRR11517742_percentages,
+    SRR11517743_percentages
+  )
+
+# If a position is present in at least one dataset, other datasets with
+# that position get percentage filled with 
+# This doesn't fill in positions not present in any of the datasets though.
+merged_5percentages_replicates <- merged_5percentages_replicates %>%
+  complete(five, name, fill=list(percentage =0))
+
+# Plot!
+plot_junction_percentages <- function(in_tbl, start, end, colors=c("#A93226", "#fca311", "#0096c7", "#7AC74F", "#053C5E")) {
+  in_tbl %>% filter(five> start, five < end) %>%
+  ggplot() +
+    geom_col(aes(x=five, y=percentage, fill=name),
+             position="dodge", stat="identity") +
+    scale_fill_manual(values=colors) +
+    scale_x_continuous(labels=merged_5percentages %>% filter(five> start, five < end) %>% pull(five),
+                       breaks = merged_5percentages %>% filter(five> start, five < end) %>% pull(five)) +
+    theme_minimal(base_size=10) + 
+    theme(axis.text.x = element_text(angle = 90),
+         panel.grid.major.x = element_blank(),
+          panel.grid.minor.x = element_blank()) +
+    ylab("Percentage of non-leader 5' junctions") + 
+    xlab("Location of 5' Junction") +
+    ylim(0, 15) + labs(fill = "Dataset")
+}
+
+
+# Finkel 16971
+validated_5DSG_finkel_16971 <- plot_junction_percentages(merged_5percentages_replicates, 16966, 16976, c("#A93226", "#D24437", "#D96359", "#fca311", "#0096c7", "#00B8F5", "#7AC74F", "#053C5E"))
+validated_5DSG_finkel_16971
+
+# Finkel 27368
+validated_5DSG_finkel_27368 <- plot_junction_percentages(merged_5percentages_replicates, 27358, 27378, c("#A93226", "#D24437", "#D96359", "#fca311", "#0096c7", "#00B8F5", "#7AC74F", "#053C5E"))
+validated_5DSG_finkel_27368
+
+# Finkel 26268
+validated_5DSG_finkel_26268 <- plot_junction_percentages(merged_5percentages_replicates, 26263, 26278, c("#A93226", "#D24437", "#D96359", "#fca311", "#0096c7", "#00B8F5", "#7AC74F", "#053C5E"))
+validated_5DSG_finkel_26268
+
+
+ggsave("figures/dataset-specific-junctions/validated_5DSG_finkel_16971.pdf", validated_5DSG_finkel_16971)
+ggsave("figures/dataset-specific-junctions/validated_5DSG_finkel_16971.svg", validated_5DSG_finkel_16971)
+saveRDS(validated_5DSG_finkel_16971, "rds/dataset_specific_junctions/validated_5DSG_finkel_16971.rds")
+
+ggsave("figures/dataset-specific-junctions/validated_5DSG_finkel_27368.pdf", validated_5DSG_finkel_27368)
+ggsave("figures/dataset-specific-junctions/validated_5DSG_finkel_27368.svg", validated_5DSG_finkel_27368)
+saveRDS(validated_5DSG_finkel_27368, "rds/dataset_specific_junctions/validated_5DSG_finkel_27368.rds")
+
+ggsave("figures/dataset-specific-junctions/validated_5DSG_finkel_26268.pdf", validated_5DSG_finkel_26268)
+ggsave("figures/dataset-specific-junctions/validated_5DSG_finkel_26268.svg", validated_5DSG_finkel_26268)
+saveRDS(validated_5DSG_finkel_26268, "rds/dataset_specific_junctions/validated_5DSG_finkel_26268.rds")
+
+# Arrange validated DSGs
+validated_5DGS_agg <- validated_5DSG_finkel_16971 +
+  validated_5DSG_finkel_27368 + theme(axis.title.y=element_blank(),
+                               axis.text.y=element_blank(),
+                               axis.ticks.y=element_blank()) +
+  validated_5DSG_finkel_26268 + theme(axis.title.y=element_blank()) +
+  plot_layout(guides = "collect", ncol=2)
+ggsave("figures/dataset-specific-junctions/validated_barcharts_agg.pdf", validated_5DGS_agg, width=25, height=10, units = "cm")
+ggsave("figures/dataset-specific-junctions/validated_barcharts_agg.svg", validated_5DGS_agg, width=25, height=10, units = "cm")
+saveRDS(validated_5DGS_agg, "rds/dataset_specific_junctions/validated_5DGS_agg.rds")
+
+```
+
+# Confirming 3' DSGs via barcharts
+```{r}
+taiaroa_nc <- remove_canonical_3junctions(taiaroa)
+kim_n <- remove_canonical_3junctions(kim)
+davidson_n <- remove_canonical_3junctions(davidson)
+finkel_24hpi_1_junc_n <- remove_canonical_3junctions(finkel_24hpi_1_junc)
+finkel_24hpi_2_junc_n <- remove_canonical_3junctions(finkel_24hpi_2_junc)
+SRR11517741_n <-  remove_canonical_3junctions(SRR11517741)
+SRR11517742_n <-  remove_canonical_3junctions(SRR11517742)
+SRR11517743_n <-  remove_canonical_3junctions(SRR11517743)
+
+
+# Convert tibbles to percentages
+taiaroa_3percentages <- to_3percentage(taiaroa_nc, 'Taiaroa')
+kim_3percentages <- to_3percentage(kim_n, 'Kim')
+davidson_3percentages <- to_3percentage(davidson_n, "Davidson")
+finkel_24hpi_1_junc_3percentages <- to_3percentage(finkel_24hpi_1_junc_n, "Finkel")
+finkel_24hpi_2_junc_3percentages <- to_3percentage(finkel_24hpi_2_junc_n, "Finkel")
+SRR11517741_3percentages <-  to_3percentage(SRR11517741_n, "Blanco-Melo")
+SRR11517742_3percentages <-  to_3percentage(SRR11517742_n, "Blanco-Melo")
+SRR11517743_3percentages <-  to_3percentage(SRR11517742_n, "Blanco-Melo")
+
+
+# Merge them
+merged_3percentages_replicates <-
+  bind_rows(
+    taiaroa_3percentages,
+    kim_3percentages,
+    davidson_3percentages,
+    finkel_24hpi_1_junc_3percentages,
+    finkel_24hpi_2_junc_3percentages,
+    SRR11517741_3percentages,
+    SRR11517742_3percentages,
+    SRR11517743_3percentages
+  )
+
+
+
+# If a position is present in at least one dataset, other datasets with
+# that position get percentage filled with 
+# This doesn't fill in positions not present in any of the datasets though.
+merged_3percentages_replicates <- merged_3percentages_replicates %>%
+  complete(three, name, fill=list(percentage =0))
+
+# Plot!
+plot_junction_percentages <- function(in_tbl, start, end, colors=c("#A93226", "#fca311", "#0096c7", "#7AC74F", "#053C5E")) {
+  in_tbl %>% filter(three> start, three < end) %>%
+  ggplot() +
+    geom_col(aes(x=three, y=percentage, fill=name),
+             position="dodge", stat="identity") +
+    scale_fill_manual(values=colors) +
+    scale_x_continuous(labels=merged_3percentages_replicates %>% filter(three> start, three < end) %>% pull(three),
+                       breaks = merged_3percentages_replicates %>% filter(three> start, three < end) %>% pull(three)) +
+    theme_minimal(base_size=10) + 
+    theme(axis.text.x = element_text(angle = 90),
+         panel.grid.major.x = element_blank(),
+          panel.grid.minor.x = element_blank()) +
+    ylab("Percentage of non-canonical 3' junctions") + 
+    xlab("Location of 3' Junction") +
+    ylim(0, 15) + labs(fill = "Dataset")
+}
+
+
+# Davidson 29171, 29189
+invalidated_3DSG_davidson_29171_29189 <- plot_junction_percentages(merged_3percentages_replicates, 29170, 29191)
+
+# Davidson 27370
+invalidated_3DSG_davidson_27370 <- plot_junction_percentages(merged_3percentages_replicates, 27360, 27380)
+
+
+# Assemble
+invalidated_3DSG_agg <- invalidated_3DSG_davidson_29171_29189 + 
+  invalidated_3DSG_davidson_27370 + theme(axis.title.y=element_blank(),
+                               axis.text.y=element_blank(),
+                               axis.ticks.y=element_blank()) +
+  plot_layout(guides = "collect", ncol=2)
+ggsave("figures/dataset-specific-junctions/invalidated_3DSG_agg.pdf", invalidated_3DSG_agg)
+
+ggsave("figures/dataset-specific-junctions/invalidated_3DSG_davidson_29171_29189.pdf", invalidated_3DSG_davidson_29171_29189)
+ggsave("figures/dataset-specific-junctions/invalidated_3DSG_davidson_29171_29189.svg", invalidated_3DSG_davidson_29171_29189)
+saveRDS(invalidated_3DSG_davidson_29171_29189, "rds/dataset_specific_junctions/invalidated_3DSG_davidson_29171_29189.rds")
+
+ggsave("figures/dataset-specific-junctions/invalidated_3DSG_davidson_27370.pdf", invalidated_3DSG_davidson_27370)
+ggsave("figures/dataset-specific-junctions/invalidated_3DSG_davidson_27370.svg", invalidated_3DSG_davidson_27370)
+saveRDS(invalidated_3DSG_davidson_27370, "rds/dataset_specific_junctions/invalidated_3DSG_davidson_27370.rds")
+
+```
+

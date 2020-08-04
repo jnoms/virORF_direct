@@ -1,0 +1,595 @@
+---
+title: "SARS-CoV-2: Visualization of long-read junctions."
+---
+
+# Load libraries
+```{r}
+library(tidyverse)
+library(scales) #allows use of "comma" to replace i.e. 1e6 with 1,000,000 during plotting
+
+library(pheatmap)
+library(patchwork) # allows composing/orienting plots
+library(RColorBrewer)
+
+# geneplots
+library(gggenes)
+
+
+library(reshape2) #for melt function
+library(ggrepel) # labeling points on a dotplot
+
+library(hashmap) # use column as key for another column
+
+```
+
+# gggenes tibbles
+```{r}
+sars2_orf1a_gene <- tibble(
+  molecule = "SARS-CoV2_ORF1a",
+  gene = c("ORF1a", "ORF1b", "S"),
+  start = c(266, 13468, 21563),
+  end = c(13483, 21555, 25384),
+  strand = "forward",
+  direction = 1
+)
+
+sars2_genes <- tibble(
+  molecule = "SARS-CoV2",
+  gene = c("S", "ORF3a", "E", "M", "ORF6", "ORF7A", "ORF7B", "ORF8", "N", "ORF10"),
+  start = c(21563, 25393, 26245, 26523, 27202, 27394, 27756, 27894, 28274, 29558),
+  end = c(25384, 26220, 26472, 27191, 27387, 27759, 27887, 28259, 29533, 29674),
+  strand = "forward",
+  direction = 1
+)
+# Specify order of gene for plotting
+sars2_genes$gene <- factor(sars2_genes$gene, levels=c("S", "ORF3a", "E", "M", "ORF6", "ORF7A", "ORF7B", "ORF8", "N", "ORF10"), ordered = T)
+
+sars2_ALL_genes <- tibble(
+  molecule = "SARS-CoV2",
+  gene = c("ORF1a", "ORF1b","S", "ORF3a", "E", "M", "ORF6", "ORF7A", "ORF7B", "ORF8", "N", "ORF10"),
+  start = c(266, 13468, 21563, 25393, 26245, 26523, 27202, 27394, 27756, 27894, 28274, 29558),
+  end = c(13483, 21555,25384, 26220, 26472, 27191, 27387, 27759, 27887, 28259, 29533, 29674),
+  strand = "forward",
+  direction = 1
+)
+# Specify order of gene for plotting
+sars2_ALL_genes$gene <- factor(sars2_ALL_genes$gene, levels=c("ORF1a", "ORF1b", "S", "ORF3a", "E", "M", "ORF6", "ORF7A", "ORF7B", "ORF8", "N", "ORF10"), ordered = T)
+```
+
+# IMPORT dRNAseq (minimap2 mapped)
+```{r}
+taiaroa <- read_delim("inputs/taiaroa_mapped_junctions.tsv", delim="\t")
+kim <- read_delim("inputs/kim_mapped_junctions.tsv", delim="\t")
+davidson <- read_delim("inputs/davidson_mapped_junctions.tsv", delim="\t")
+
+colnames(taiaroa) <- c("read_name", "five", "three")
+colnames(kim) <- c("read_name", "five", "three")
+colnames(davidson) <- c("read_name", "five", "three")
+
+
+label_genes_by_3prime <- function(in_tbl) {
+  in_tbl %>%
+    mutate(gene = "Intergenic") %>%
+    mutate(gene = ifelse(three>=21563, ifelse(three<=25384,"1. S", "Intergenic" ), "Intergenic")) %>%
+    mutate(gene = ifelse(three>=25393, ifelse(three<=26220,"2. ORF3a", gene ), gene)) %>%
+    mutate(gene = ifelse(three>=26245, ifelse(three<=26472,"3. E", gene ), gene)) %>%
+    mutate(gene = ifelse(three>=26523, ifelse(three<=27191,"4. M", gene ), gene)) %>%
+    mutate(gene = ifelse(three>=27202, ifelse(three<=27387,"5. ORF6", gene ), gene)) %>%
+    mutate(gene = ifelse(three>=27394, ifelse(three<=27887,"6. ORF7a/b", gene ), gene)) %>%
+    mutate(gene = ifelse(three>=27894, ifelse(three<=28259,"7. ORF8", gene ), gene)) %>%
+    mutate(gene = ifelse(three>=28274, ifelse(three<=29533,"8. N", gene ), gene)) %>%
+    mutate(gene = ifelse(three>=29558, ifelse(three<=29674,"9. ORF10", gene ), gene))
+}
+
+
+
+# Label genes by their 3' junctions
+davidson <- label_genes_by_3prime(davidson)
+
+taiaroa <- label_genes_by_3prime(taiaroa) 
+
+kim <- label_genes_by_3prime(kim)
+
+
+# Calculate junction length for each
+davidson <- davidson %>%
+  mutate(junction_length=three-five)
+
+taiaroa <- taiaroa %>%
+  mutate(junction_length=three-five)
+
+kim <- kim %>%
+  mutate(junction_length=three-five)
+```
+
+# IMPORT Blanco-Melo short read data (minimap2 mapped)
+```{r}
+SRR11517741 <- read_delim("inputs/SRR11517741_junctions.txt", delim="\t")
+SRR11517742 <- read_delim("inputs/SRR11517742_junctions.txt", delim="\t")
+SRR11517743 <- read_delim("inputs/SRR11517743_junctions.txt", delim="\t")
+
+
+colnames(SRR11517741) <- c("read_name", "five", "three")
+colnames(SRR11517742) <- c("read_name", "five", "three")
+colnames(SRR11517743) <- c("read_name", "five", "three")
+
+SRR11517741 <- label_genes_by_3prime(SRR11517741)
+SRR11517742 <- label_genes_by_3prime(SRR11517742)
+SRR11517743 <- label_genes_by_3prime(SRR11517743)
+```
+
+# IMPORT Blanco-Melo ferret data (minimap2 mapped)
+```{r}
+#Importing
+ferret_cov <- read_delim("inputs/blanco_melo_ferret/SRR11517855_8_ferret.cov", delim="\t", col_names=c("genome", "position", "coverage"))
+ferret_junc <- read_delim("inputs/blanco_melo_ferret/SRR11517855_8_ferret.junctions.txt", delim="\t")
+colnames(ferret_junc) <- c("name", 'five', 'three')
+```
+
+
+# IMPORT Finkel 4hpi, 24hpi (STAR mapped)
+```{r}
+# Import
+finkel_5hpi_1_cov <- read_delim("inputs/finkel/mRNA5_1.cov", delim="\t", col_names=c("genome", "position", "coverage"))
+finkel_5hpi_2_cov <- read_delim("inputs/finkel/mRNA5_2.cov", delim="\t", col_names=c("genome", "position", "coverage"))
+finkel_24hpi_1_cov <- read_delim("inputs/finkel/mRNA24_1.cov", delim="\t", col_names=c("genome", "position", "coverage"))
+finkel_24hpi_2_cov <- read_delim("inputs/finkel/mRNA24_2.cov", delim="\t", col_names=c("genome", "position", "coverage"))
+
+
+finkel_5hpi_1_junc <- read_delim("inputs/finkel/mRNA5_1.junctions.txt", delim="\t")
+finkel_5hpi_2_junc <- read_delim("inputs/finkel/mRNA5_2.junctions.txt", delim="\t")
+finkel_24hpi_1_junc <- read_delim("inputs/finkel/mRNA24_1.junctions.txt", delim="\t")
+finkel_24hpi_2_junc <- read_delim("inputs/finkel/mRNA24_2.junctions.txt", delim="\t")
+colnames(finkel_5hpi_1_junc) <- c("name", 'five', 'three')
+colnames(finkel_5hpi_2_junc) <- c("name", 'five', 'three')
+colnames(finkel_24hpi_1_junc) <- c("name", 'five', 'three')
+colnames(finkel_24hpi_2_junc) <- c("name", 'five', 'three')
+```
+
+# IMPORT Emanuel 4hpi, 24hpi (STAR mapped)
+```{r}
+emanual_total_4hpi_1_cov <- read_delim("inputs/emanual_totalRNA/SRR11550047.cov", delim="\t", col_names=c("genome", "position", "coverage"))
+emanual_total_4hpi_2_cov <- read_delim("inputs/emanual_totalRNA/SRR11550048.cov", delim="\t", col_names=c("genome", "position", "coverage"))
+emanual_total_12hpi_1_cov <- read_delim("inputs/emanual_totalRNA/SRR11550043.cov", delim="\t", col_names=c("genome", "position", "coverage"))
+emanual_total_12hpi_2_cov <- read_delim("inputs/emanual_totalRNA/SRR11550044.cov", delim="\t", col_names=c("genome", "position", "coverage"))
+emanual_total_24hpi_1_cov <- read_delim("inputs/emanual_totalRNA/SRR11550045.cov", delim="\t", col_names=c("genome", "position", "coverage"))
+emanual_total_24hpi_2_cov <- read_delim("inputs/emanual_totalRNA/SRR11550046.cov", delim="\t", col_names=c("genome", "position", "coverage"))
+
+emanual_total_4hpi_1_junc <- read_delim("inputs/emanual_totalRNA/SRR11550047.junctions.txt", delim="\t")
+emanual_total_4hpi_2_junc <- read_delim("inputs/emanual_totalRNA/SRR11550048.junctions.txt", delim="\t")
+emanual_total_12hpi_1_junc <- read_delim("inputs/emanual_totalRNA/SRR11550043.junctions.txt", delim="\t")
+emanual_total_12hpi_2_junc <- read_delim("inputs/emanual_totalRNA/SRR11550044.junctions.txt", delim="\t")
+emanual_total_24hpi_1_junc <- read_delim("inputs/emanual_totalRNA/SRR11550045.junctions.txt", delim="\t")
+emanual_total_24hpi_2_junc <- read_delim("inputs/emanual_totalRNA/SRR11550046.junctions.txt", delim="\t")
+colnames(emanual_total_4hpi_1_junc) <- c("name", 'five', 'three')
+colnames(emanual_total_4hpi_2_junc) <- c("name", 'five', 'three')
+colnames(emanual_total_12hpi_1_junc) <- c("name", 'five', 'three')
+colnames(emanual_total_12hpi_2_junc) <- c("name", 'five', 'three')
+colnames(emanual_total_24hpi_1_junc) <- c("name", 'five', 'three')
+colnames(emanual_total_24hpi_2_junc) <- c("name", 'five', 'three')
+```
+# IMPORT Emmanual polyA timecourse (STAR mapped)
+```{r}
+
+```
+
+
+# IMPORT Suzuki organoids (minimap2 mapped)
+```{r}
+# Import
+suzuki_bronchial_5dpi_1_cov <- read_delim("inputs/suzuki_bronchial_organoids/minimap2/SRR11811022.cov", delim="\t", col_names=c("genome", "position", "coverage"))
+suzuki_bronchial_5dpi_2_cov <- read_delim("inputs/suzuki_bronchial_organoids/minimap2/SRR11811023.cov", delim="\t", col_names=c("genome", "position", "coverage"))
+suzuki_bronchial_5dpi_3_cov <- read_delim("inputs/suzuki_bronchial_organoids/minimap2/SRR11811024.cov", delim="\t", col_names=c("genome", "position", "coverage"))
+
+
+suzuki_bronchial_5dpi_1_junc <- read_delim("inputs/suzuki_bronchial_organoids/minimap2/SRR11811022.junctions.txt", delim="\t")
+suzuki_bronchial_5dpi_2_junc <- read_delim("inputs/suzuki_bronchial_organoids/minimap2/SRR11811023.junctions.txt", delim="\t")
+suzuki_bronchial_5dpi_3_junc <- read_delim("inputs/suzuki_bronchial_organoids/minimap2/SRR11811024.junctions.txt", delim="\t")
+
+colnames(suzuki_bronchial_5dpi_1_junc) <- c("name", 'five', 'three')
+colnames(suzuki_bronchial_5dpi_2_junc) <- c("name", 'five', 'three')
+colnames(suzuki_bronchial_5dpi_3_junc) <- c("name", 'five', 'three')
+```
+
+# Plotting junctions over time - using the finkel (polyA) and emanual (total) currently
+```{r}
+
+# SUB-FUNCTIONS
+#---------------------------------#
+format_timepiont_single <- function(timepoint, time) {
+  
+  # Split and do calculations separately for fiveprime
+  # and threeprime junctions...
+  five_tbl <- timepoint %>%
+      group_by(five) %>%
+      tally() %>%
+      mutate(percentage = n*100/sum(n))
+  colnames(five_tbl)[1] <- c("coordinate")
+  five_tbl$type = "five"
+  
+  three_tbl <- timepoint %>%
+      group_by(three) %>%
+      tally() %>%
+      mutate(percentage = n*100/sum(n))
+  colnames(three_tbl)[1] <- c("coordinate")
+  three_tbl$type = "three"
+  
+  agg <- rbind(
+    five_tbl,
+    three_tbl
+  )
+  colnames(agg) <- c("coordinate", paste("n", time, sep="_"), paste("percentage", time, sep="_"), "type")
+  agg %>%
+    select("coordinate", "type", everything())
+}
+
+
+aggregate_two_timepoints <- function(timepoint1, timepoint2) {
+  # This function takes in two standard junction tibbles,
+  # and calculates the percentage change in 5' and 3' junctions
+  # (separately) for each position.
+  # 
+  # Steps:
+  # 1) Take in each timepoint separately and process through 
+  #    format_timepiont_single, which tallys each 5' and 3' 
+  #    junction location and converts them to percentage. 
+  #    Here, each 3' junction site gets a percentage  which
+  #    signifies what percentage **of 3' junctions** fall at
+  #    that position. This happens separately but similarly for
+  #    5' junctions.
+  # 2) The timepoints are aggregated into one tidy tibble. The
+  #    columns are: 
+  #     coordinate - position of the coordinate
+  #     type - either 'five' or 'three' (i.e prime)
+  #     n_1 - number of juncs at that position in the 1st timepoint
+  #     percentage_1 - percentage juncs at that position in the 1st timepoint
+  #     n_2 - number of juncs at that position in the 2nd timepoint
+  #     percentage_2 - percentage juncs at that position in the 2nd timepoint
+  #     delta - (percentage_2 - percentage_1)
+  
+  
+  timepoint1_summarized <- format_timepiont_single(timepoint1, 1)
+  timepoint2_summarized <- format_timepiont_single(timepoint2, 2)
+  
+  timepoints_merged <- 
+    full_join(timepoint1_summarized, timepoint2_summarized, by=c("coordinate", "type"))  %>%
+    replace(is.na(.), 0) %>%
+    mutate(delta = percentage_2 - percentage_1) %>%
+    arrange(-percentage_2)
+  
+  timepoints_merged
+}
+
+
+plot_timepoint_percentage_delta <- function(timepoint_tbl, t1, t2, delta_label_threshold = 0.5, y_zoom=NA) {
+  if (is.na(y_zoom)) {
+    timepoint_tbl %>% 
+      ggplot() +
+        geom_point(aes(x = coordinate, y = delta, color=type),
+                   size=1) +
+       scale_color_manual(values=c("#ff6700", "#3a6ea5"), name = "Junction Type", labels = c("5'", "3'")) + 
+      theme_minimal(base_size=12) +
+      ylab("Change In Junction Percentage") +
+      xlab("Position") +
+      geom_label_repel(data = timepoint_tbl %>% filter(delta > delta_label_threshold | delta < -delta_label_threshold),
+                       aes(x=coordinate, y=delta, label=coordinate),
+                         size = 3,
+                         min.segment.length = 0,
+                         nudge_x = 5,
+                         nudge_y = 3,
+                         repel=1, 
+                         max.iter=10000,
+                         seed =1,
+                         force=0.5,
+                         force_pull = 0.5,
+                         ylim = c(NA, 0),
+                        ) +
+      guides(colour = guide_legend(override.aes = list(size=6))) +
+      scale_y_continuous(limits=c(-40, 5))
+  } else{
+    timepoint_tbl %>% 
+      ggplot() +
+        geom_point(aes(x = coordinate, y = delta, color=type),
+                   size=1) +
+       scale_color_manual(values=c("#ff6700", "#3a6ea5"), name = "Junction Type", labels = c("5'", "3'")) + 
+      theme_minimal(base_size=12) +
+      ylab("Change In Junction Percentage") +
+      xlab("Position") +
+      coord_cartesian(ylim=c(-y_zoom, y_zoom)) +
+      guides(colour = guide_legend(override.aes = list(size=6)))
+  }
+    
+}
+
+
+
+# MAIN - actually doing the stuff
+#---------------------------------#
+
+# Calculate and aggregate percentages
+finkel_time_percentages <- aggregate_two_timepoints(finkel_5hpi_1_junc,  finkel_24hpi_1_junc)
+emanual_total_time_percentages <- aggregate_two_timepoints(emanual_total_4hpi_1_junc,  emanual_total_24hpi_1_junc)
+
+# plot
+emanual_total_time_percentages_plt <- plot_timepoint_percentage_delta(emanual_total_time_percentages, t1=4, t2=24, delta_label_threshold=2.5)
+emanual_total_time_percentages_plt
+emanual_total_time_percentages_zoom_plt <- plot_timepoint_percentage_delta(emanual_total_time_percentages, t1=4, t2=24, delta_label_threshold=2.5, y_zoom = 0.5)
+emanual_total_time_percentages_zoom_plt
+finkel_time_percentages_plt <- plot_timepoint_percentage_delta(finkel_time_percentages, t1=5, t2=24, delta_label_threshold=2.5)
+finkel_time_percentages_plt
+finkel_time_percentages_plt_zoom <- plot_timepoint_percentage_delta(finkel_time_percentages, t1=5, t2=24, delta_label_threshold=2.5, y_zoom = 0.5)
+finkel_time_percentages_plt_zoom
+
+
+# Arrange
+junction_changes_over_time_plt <-
+  emanual_total_time_percentages_plt + theme(axis.title.x = element_blank(),
+                                             axis.text.x = element_blank(),
+                                             axis.ticks.x = element_blank()) + ggtitle("Emanual et al.\n(Total RNAseq)") +
+  finkel_time_percentages_plt + theme(axis.title.y=element_blank(),
+                                              axis.title.x = element_blank(),
+                                             axis.text.x = element_blank(),
+                                             axis.ticks.x = element_blank(),
+                                             axis.text.y = element_blank(),
+                                             axis.ticks.y = element_blank()) + ggtitle("Finkel et al.\n(PolyA RNAseq)") +
+  emanual_total_time_percentages_zoom_plt + theme() +
+  finkel_time_percentages_plt_zoom + theme(axis.title.y=element_blank(),
+                                             axis.text.y = element_blank(),
+                                             axis.ticks.y = element_blank()) +
+  plot_layout(guides = "collect", ncol=2)
+junction_changes_over_time_plt
+
+ggsave("figures/junctions_over_time/emanual_total_time_percentages_plt.pdf", emanual_total_time_percentages_plt, width = 25, height=20, units = "cm")
+ggsave("figures/junctions_over_time/emanual_total_time_percentages_plt.svg", emanual_total_time_percentages_plt, width = 25, height=20, units = "cm")
+saveRDS(emanual_total_time_percentages_plt, "rds/junctions_over_time/emanual_total_time_percentages_plt.rds")
+
+ggsave("figures/junctions_over_time/finkel_time_percentages_plt.pdf", finkel_time_percentages_plt, width = 25, height=20, units = "cm")
+ggsave("figures/junctions_over_time/finkel_time_percentages_plt.svg", finkel_time_percentages_plt, width = 25, height=20, units = "cm")
+saveRDS(finkel_time_percentages_plt, "rds/junctions_over_time/finkel_time_percentages_plt.rds")
+
+ggsave("figures/junctions_over_time/emanual_total_time_percentages_zoom_plt.pdf", emanual_total_time_percentages_zoom_plt, width = 25, height=20, units = "cm")
+ggsave("figures/junctions_over_time/emanual_total_time_percentages_zoom_plt.svg", emanual_total_time_percentages_zoom_plt, width = 25, height=20, units = "cm")
+saveRDS(emanual_total_time_percentages_zoom_plt, "rds/junctions_over_time/emanual_total_time_percentages_zoom_plt.rds")
+
+ggsave("figures/junctions_over_time/finkel_time_percentages_plt_zoom.pdf", finkel_time_percentages_plt_zoom, width = 25, height=20, units = "cm")
+ggsave("figures/junctions_over_time/finkel_time_percentages_plt_zoom.svg", finkel_time_percentages_plt_zoom, width = 25, height=20, units = "cm")
+saveRDS(finkel_time_percentages_plt_zoom, "rds/junctions_over_time/finkel_time_percentages_plt_zoom.rds")
+
+ggsave("figures/junctions_over_time/junction_changes_over_time_agg.pdf", junction_changes_over_time_plt, width = 25, height=20, units = "cm")
+ggsave("figures/junctions_over_time/junction_changes_over_time_agg.svg", junction_changes_over_time_plt, width = 25, height=20, units = "cm")
+saveRDS(junction_changes_over_time_plt, "rds/junctions_over_time/junction_changes_over_time_agg.rds")
+
+```
+
+
+
+
+# Plotting junctions over time - show specific changes in canonical vs noncanonical
+```{r}
+
+#----------------------------------------#
+# Functions
+#----------------------------------------#
+
+# Make key for identifying TRS locations
+trs_locations <- tibble(
+  gene = c("S", "ORF3a", "E", "M", "ORF6", "ORF7a", "ORF8", "N"),
+  TRS = c(21555, 25384, 26236, 26472, 27040, 27387, 27887, 28259)
+)
+trs_map <- hashmap(trs_locations$gene, trs_locations$TRS)
+
+# Convert each 5'-->3' junction pair into percentages
+to_5_3_percentage <- function(in_tbl) {
+  out <- in_tbl %>%
+  group_by(five, three) %>% 
+  tally()
+
+  out$percentage <- (out$n*100)/sum(out$n)
+  colnames(out)[3] <- "count"
+  out
+}
+
+
+# Classify based on trs location..
+classify_by_trs <- function(in_tbl) {
+  in_tbl %>%
+  mutate(classification = ifelse(
+    five < 100 & three > trs_map[["S"]]-10 & three < trs_map[["S"]]+10,
+    "S",
+    ""
+    )) %>%
+  mutate(classification = ifelse(
+    five < 100 & three > trs_map[["ORF3a"]]-10 & three < trs_map[["ORF3a"]]+10,
+    "ORF3a",
+    classification
+    )) %>%
+  mutate(classification = ifelse(
+    five < 100 & three > trs_map[["E"]]-10 & three < trs_map[["E"]]+10,
+    "E",
+    classification
+    )) %>%
+  mutate(classification = ifelse(
+    five < 100 & three > trs_map[["M"]]-10 & three < trs_map[["M"]]+10,
+    "M",
+    classification
+    )) %>%
+  mutate(classification = ifelse(
+    five < 100 & three > trs_map[["ORF6"]]-10 & three < trs_map[["ORF6"]]+10,
+    "ORF6",
+    classification
+    )) %>%
+  mutate(classification = ifelse(
+    five < 100 & three > trs_map[["ORF7a"]]-10 & three < trs_map[["ORF7a"]]+10,
+    "ORF7a",
+    classification
+    )) %>%
+  mutate(classification = ifelse(
+    five < 100 & three > trs_map[["ORF8"]]-10 & three < trs_map[["ORF8"]]+10,
+    "ORF8",
+    classification
+    )) %>%
+  mutate(classification = ifelse(
+    five < 100 & three > trs_map[["N"]]-10 & three < trs_map[["N"]]+10,
+    "N",
+    classification
+    )) %>%
+  mutate(classification = ifelse(classification == "", "NC", classification))
+}
+
+
+# Merge timepoints 
+merge_timepoints <- function(timepoint1_tbl, timepoint2_tbl) {
+  
+  # Add timepoint to the colnames
+  colnames(timepoint1_tbl) <- c("five", "three", "t1_count", "t1_percentage")
+  colnames(timepoint2_tbl) <- c("five", "three", "t2_count", "t2_percentage")
+  
+  merged <- full_join(timepoint1_tbl, timepoint2_tbl, by=c("five", "three"))  %>%
+    replace(is.na(.), 0) %>%
+    mutate(delta = t2_percentage - t1_percentage) %>%
+    arrange(-t2_percentage)
+
+merged
+}
+
+# Need to calculate new t1 and t2 counts and percentages for each CLASS
+
+count_by_class <- function(in_tbl) {
+  out_tbl <- in_tbl %>%
+  group_by(classification) %>%
+  mutate(class_t1_count = sum(t1_count),
+         class_t2_count = sum(t2_count)) %>%
+  select(classification, class_t1_count, class_t2_count) %>%
+  unique()
+
+
+# Calcualte class percentages
+out_tbl <- out_tbl %>%
+  mutate(class_t1_p = class_t1_count*100/sum(out_tbl$class_t1_count),
+         class_t2_p = class_t2_count*100/sum(out_tbl$class_t2_count),
+         delta = class_t2_p - class_t1_p)
+
+# Label for coloring purpose
+out_tbl <- out_tbl %>%
+  mutate(Junction_Type = ifelse(classification=="NC", "Non-canonical", "Canonical"))
+
+out_tbl
+
+}
+
+
+plot_classwise_percentage_change <- function(in_tbl, lim=45) {
+  class_order <-c("S", "ORF3a", "E", "M", "ORF6", "ORF7a", "ORF8", "N", "NC")
+  in_tbl %>%
+    ggplot() +
+    geom_col(aes(x=classification, y = delta, fill=Junction_Type)) +
+    ylab("Change in Percentage of Junctions\n(Late - Early)") +
+    scale_x_discrete(limits=class_order) +
+    theme_minimal(base_size=12) +
+    scale_fill_manual(values=c("#859799", "#000000")) +
+    geom_text(aes(x=5.5, y =25), label="Increases over\ntime", size=2) +
+    geom_text(aes(x=5.5, y =-25), label="Decreases over\ntime", size=2) +
+    geom_segment(aes(x=3.8, xend=3.8, y=5, yend=25),
+                 arrow=arrow(length=unit(0.2, "cm"))) +
+    geom_segment(aes(x=3.8, xend=3.8, y=-5, yend=-25),
+                 arrow=arrow(length=unit(0.2, "cm"))) +
+    theme(axis.text.x = element_text(angle = 90)) +
+    geom_hline(yintercept = 0) +
+    scale_y_continuous(limits=c(-lim, lim), labels=seq(-lim, lim, 10), breaks=seq(-lim, lim, 10))
+}
+
+#----------------------------------------#
+# Main
+#----------------------------------------#
+
+# Convert to percentages
+finkel_5hpi_1_junc_5_3_percentages <- to_5_3_percentage(finkel_5hpi_1_junc)
+finkel_24hpi_1_junc_5_3_percentages <- to_5_3_percentage(finkel_24hpi_1_junc)
+
+
+emanual_total_4hpi_1_junc_5_3_percentages <- to_5_3_percentage(emanual_total_4hpi_1_junc)
+emanual_total_24hpi_1_junc_5_3_percentages <- to_5_3_percentage(emanual_total_24hpi_1_junc)
+
+# Merge timepoints and classify by TRS
+finkel_merged_timepoints_5_3 <- merge_timepoints(finkel_5hpi_1_junc_5_3_percentages, finkel_24hpi_1_junc_5_3_percentages)
+finkel_merged_timepoints_5_3 <- classify_by_trs(finkel_merged_timepoints_5_3)
+
+emanual_total_merged_timepoints_5_3 <- merge_timepoints(emanual_total_4hpi_1_junc_5_3_percentages, emanual_total_24hpi_1_junc_5_3_percentages)
+emanual_total_merged_timepoints_5_3 <- classify_by_trs(emanual_total_merged_timepoints_5_3)
+
+# Count by class
+finkel_merged_timepoints_classwise <- count_by_class(finkel_merged_timepoints_5_3)
+emanual_total_merged_timepoints_classwise <- count_by_class(emanual_total_merged_timepoints_5_3)
+
+
+
+
+# Plot em
+finkel_merged_timepoints_classwise_plt <- plot_classwise_percentage_change(finkel_merged_timepoints_classwise)
+finkel_merged_timepoints_classwise_plt
+emanual_total_merged_timepoints_classwise_plt <- plot_classwise_percentage_change(emanual_total_merged_timepoints_classwise) 
+emanual_total_merged_timepoints_classwise_plt
+
+# Save em
+ggsave("figures/junctions_over_time/finkel_merged_timepoints_classwise_plt.pdf", finkel_merged_timepoints_classwise_plt,  height = 10, width = 15, units="cm")
+ggsave("figures/junctions_over_time/finkel_merged_timepoints_classwise_plt.svg", finkel_merged_timepoints_classwise_plt, height = 10, width = 15, units="cm")
+saveRDS(finkel_merged_timepoints_classwise_plt, "rds/junctions_over_time/finkel_merged_timepoints_classwise_plt.rds")
+
+ggsave("figures/junctions_over_time/emanual_total_merged_timepoints_classwise_plt.pdf", emanual_total_merged_timepoints_classwise_plt,  height = 10, width = 15, units="cm")
+ggsave("figures/junctions_over_time/emanual_total_merged_timepoints_classwise_plt.svg", emanual_total_merged_timepoints_classwise_plt, height = 10, width = 15, units="cm")
+saveRDS(emanual_total_merged_timepoints_classwise_plt, "rds/junctions_over_time/emanual_total_merged_timepoints_classwise_plt.rds")
+```
+
+
+
+
+
+# Alternative plotting -Showing specific 5'-->3' junction changes
+# NOT USED - NOT SURE HOW TO PLOT
+```{r}
+
+# Calculate percentage of each junction
+calculate_percentages <- function(in_tbl) {
+  in_tbl <- in_tbl %>%
+    group_by(five, three) %>%
+    tally()
+
+  in_tbl <- in_tbl %>%
+    mutate(p = n*100/sum(in_tbl$n))
+  in_tbl
+}
+
+
+finkel_5hpi_1_p <- calculate_percentages(finkel_5hpi_1_junc)
+finkel_24hpi_1_p <- calculate_percentages(finkel_24hpi_1_junc)
+
+
+merge_and_calculate_delta <- function(timepoint1_tbl, timepoint2_tbl) {
+  merged <- full_join(timepoint1_tbl,
+          timepoint2_tbl,
+          by=c("five", "three")) %>%
+          replace(is.na(.), 0)
+  
+  colnames(merged) <- c("five", "three", "t1_n", "t1_p", "t2_n", "t2_p")
+  
+  merged %>%
+    mutate(delta = t2_p - t1_p) %>%
+    arrange(-delta)
+}
+
+merge_and_calculate_delta(finkel_5hpi_1_p, finkel_24hpi_1_p) %>%
+  arrange(delta) %>%
+  ggplot() +
+    geom_curve(
+      aes(x = five, xend = three, y = delta, yend = delta),
+      curvature = -0.2
+    )
+
+
+finkel_merged <- merge_and_calculate_delta(finkel_5hpi_1_p, finkel_24hpi_1_p) %>%
+  arrange(delta) 
+
+
+ggplot(finkel_merged) +
+  geom_point(aes())
+```

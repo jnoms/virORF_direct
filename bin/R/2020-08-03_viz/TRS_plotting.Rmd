@@ -1,0 +1,206 @@
+---
+title: "SARS2 TRS Analysis"
+output: html_notebook
+---
+
+```{r}
+library(tidyverse)
+library(pheatmap)
+library(reshape2)
+library(svglite)
+library(hashmap)
+library(patchwork) # allows composing/orienting plots
+
+
+# PCA packages
+library("FactoMineR")
+library("factoextra")
+
+# Bray curtis
+library(vegan)
+
+# Plotting 
+library(scales) #allows use of "comma" to replace i.e. 1e6 with 1,000,000 during plotting
+library(cowplot)
+```
+
+# Import data
+```{r}
+taiaroa_homology_lengths <- read_delim("taiaroa_homology_length_distribution.tsv", delim="\t")
+kim_homology_lengths <- read_delim("kim_homology_length_distribution.tsv", delim="\t")
+davidson_homology_lengths <- read_delim("davidson_homology_length_distribution.tsv", delim="\t")
+
+process_trs_stuff <- function(in_tbl) {
+  in_tbl$type <- str_replace_all(in_tbl$type, "^canonical", "C")
+  in_tbl$type <- str_replace_all(in_tbl$type, "^noncanonical", "NC")
+  in_tbl$type <- str_replace_all(in_tbl$type, "^random", "R")
+  in_tbl
+}
+
+taiaroa_homology_lengths <- process_trs_stuff(taiaroa_homology_lengths)
+kim_homology_lengths <- process_trs_stuff(kim_homology_lengths)
+davidson_homology_lengths <- process_trs_stuff(davidson_homology_lengths)
+
+```
+
+# plot
+```{r}
+
+
+# I'll go with this plot. Interpretation is that there is only a minor difference
+# in homology at non-canonical sites junction sites compared to random sites... effect 
+# size is small despite the veery significant p value.
+
+plot_trs_lengths <- function(in_tbl) {
+  ggplot(in_tbl) +
+    geom_violin(aes(x=type, y=lengths), fill="black", scale="width", adjust=0.5) + 
+    scale_y_continuous(breaks=seq(0, 15)) +
+    theme_minimal(base_size=17) +
+    ylab("Homology Length") + xlab("Junction Type") +
+    theme(panel.grid.minor.y = element_blank()) +
+    scale_y_continuous(limits=c(0, 14), breaks = seq(0, 14))
+}
+
+
+taiaroa_homology_lengths_plt <- plot_trs_lengths(taiaroa_homology_lengths)
+taiaroa_homology_lengths_plt
+saveRDS(taiaroa_homology_lengths_plt, "rds/taiaroa_homology_lengths_plt.rds")
+
+kim_homology_lengths_plt <- plot_trs_lengths(kim_homology_lengths)
+kim_homology_lengths_plt
+saveRDS(taiaroa_homology_lengths_plt, "rds/kim_homology_lengths_plt.rds")
+
+davidson_homology_lengths_plt <- plot_trs_lengths(davidson_homology_lengths)
+davidson_homology_lengths_plt
+saveRDS(taiaroa_homology_lengths_plt, "rds/davidson_homology_lengths_plt.rds")
+
+
+
+# Getting group means
+taiaroa_homology_lengths %>%
+  group_by(type) %>%
+  mutate(mean = mean(lengths)) %>%
+  select(type, mean) %>%
+  unique()
+
+kim_homology_lengths %>%
+  group_by(type) %>%
+  mutate(mean = mean(lengths)) %>%
+  select(type, mean) %>%
+  unique()
+
+davidson_homology_lengths %>%
+  group_by(type) %>%
+  mutate(mean = mean(lengths)) %>%
+  select(type, mean) %>%
+  unique()
+
+```
+
+# Assemble
+```{r}
+
+homology_lengths_plt <- taiaroa_homology_lengths_plt + theme(axis.title.x = element_blank()) +
+  kim_homology_lengths_plt + theme(axis.text.y = element_blank(),
+                                   axis.title.y = element_blank()) +
+  davidson_homology_lengths_plt + theme(axis.text.y = element_blank(),
+                                        axis.title.y = element_blank(),
+                                        axis.title.x = element_blank())
+
+ggsave("figures/homology_length_plots.pdf", homology_lengths_plt, width=20, height=10, units="cm")
+ggsave("figures/homology_length_plots.svg", homology_lengths_plt, width=20, height=10, units="cm")
+```
+
+
+####################################################################################################################################################
+# The original TRS figures
+####################################################################################################################################################
+# Import data
+```{r}
+taiaroa <- read_delim("TRS_ORIGINAL/output/taiaroa_TRS_percentages.tsv", delim="\t")
+kim <- read_delim("TRS_ORIGINAL/output/kim_TRS_percentages.tsv", delim="\t")
+davidson <- read_delim("TRS_ORIGINAL/output/davidson_TRS_percentages.tsv", delim="\t")
+
+
+# Make combined bar for x-axis, and also only keep the TOP (rank 1) seed
+taiaroa <- taiaroa %>%
+  mutate(position = paste(ORF, position_type, sep="_")) %>% 
+  filter(seed != "Other", rank!=2)
+kim <- kim %>%
+  mutate(position = paste(ORF, position_type, sep="_")) %>% 
+  filter(seed != "Other", rank!=2)
+davidson <- davidson %>%
+  mutate(position = paste(ORF, position_type, sep="_")) %>% 
+  filter(seed != "Other", rank!=2)
+
+
+
+# Replace T's with U's
+taiaroa$seed <- str_replace_all(taiaroa$seed, "T", "U")
+kim$seed <- str_replace_all(kim$seed, "T", "U")
+davidson$seed <- str_replace_all(davidson$seed, "T", "U")
+```
+
+# Plot
+```{r}
+
+#gene_order <- c("ORF1a_internal", "S_cannonical", "S_internal", "ORF3A_cannonical", "ORF3A_internal", "E_cannonical", "E_internal", "M_cannonical", "M_internal", "ORF7A_cannonical", "ORF7A_internal",  "ORF8_cannonical", "ORF8_internal", "N_cannonical", "N_internal")
+gene_order <- c("ORF1a_internal", "S_internal",  "ORF3A_internal",  "E_internal",  "M_internal",  "ORF7A_internal",   "ORF8_internal",  "N_internal", "S_cannonical", "ORF3A_cannonical", "E_cannonical","M_cannonical","ORF7A_cannonical","ORF8_cannonical","N_cannonical")
+x_ticks <- gene_order %>%
+  str_replace_all("_internal", "") %>%
+  str_replace_all("_cannonical", "")
+
+# Function for plotting
+plot_trs_percentages <- function(in_tbl){
+  ggplot(data = in_tbl,
+       aes(x=position, y=percentage)) +
+    geom_col(aes(fill=position_type, label = ORF)) + 
+    coord_flip() + 
+    scale_x_discrete(limits=rev(gene_order), 
+                     labels=rev(x_ticks) ) + 
+    theme_minimal(base_size=17) +
+    scale_fill_manual(values = c("#2471A3", "#A93226"),
+                      labels=c("Canonical TRS Site", "Within ORF"), 
+                      name="Junction Location") +
+    xlab("ORF") + ylab("Percentage")  +
+    geom_text(data=in_tbl, aes(label=seed),hjust="inward")
+}
+
+
+taiaroa_trs <- plot_trs_percentages(taiaroa)
+taiaroa_trs
+saveRDS(taiaroa_trs, "rds/taiaroa_trs_most_common_homology.rds")
+
+
+kim_trs <- plot_trs_percentages(kim)
+kim_trs
+saveRDS(kim_trs, "rds/kim_trs_most_common_homology.rds")
+
+
+davidson_trs <- plot_trs_percentages(davidson)
+davidson_trs
+saveRDS(davidson_trs, "rds/davidson_trs_most_common_homology.rds")
+
+
+
+```
+
+# Arrange the figure
+```{r}
+
+trs_arranged <- taiaroa_trs + 
+  kim_trs + theme(axis.title.y=element_blank(),
+                              axis.text.y=element_blank(),
+                              plot.title = element_blank()) +
+  davidson_trs + theme(axis.title.y=element_blank(),
+                              axis.text.y=element_blank(),
+                              plot.title = element_blank()) +
+  plot_layout(guides = 'collect')
+
+
+ggsave("figures/trs_most_common_homology.pdf", width = 40, height=15, units="cm")
+ggsave("figures/trs_most_common_homology.svg", width = 40, height=15, units="cm")
+
+```
+
+

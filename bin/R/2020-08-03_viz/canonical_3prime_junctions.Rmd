@@ -1,0 +1,292 @@
+---
+title: "SARS-CoV-2: Visualization of long-read junctions."
+output: html_notebook
+---
+
+# Load libraries
+```{r}
+library(tidyverse)
+library(scales) #allows use of "comma" to replace i.e. 1e6 with 1,000,000 during plotting
+
+library(pheatmap)
+library(patchwork) # allows composing/orienting plots
+library(RColorBrewer)
+
+# geneplots
+library(gggenes)
+
+
+library(reshape2) #for melt function
+library(ggrepel) # labeling points on a dotplot
+
+library(hashmap) # use column as key for another column
+
+```
+
+# gggenes tibbles
+```{r}
+sars2_orf1a_gene <- tibble(
+  molecule = "SARS-CoV2_ORF1a",
+  gene = c("ORF1a", "ORF1b", "S"),
+  start = c(266, 13468, 21563),
+  end = c(13483, 21555, 25384),
+  strand = "forward",
+  direction = 1
+)
+
+sars2_genes <- tibble(
+  molecule = "SARS-CoV2",
+  gene = c("S", "ORF3a", "E", "M", "ORF6", "ORF7A", "ORF7B", "ORF8", "N", "ORF10"),
+  start = c(21563, 25393, 26245, 26523, 27202, 27394, 27756, 27894, 28274, 29558),
+  end = c(25384, 26220, 26472, 27191, 27387, 27759, 27887, 28259, 29533, 29674),
+  strand = "forward",
+  direction = 1
+)
+# Specify order of gene for plotting
+sars2_genes$gene <- factor(sars2_genes$gene, levels=c("S", "ORF3a", "E", "M", "ORF6", "ORF7A", "ORF7B", "ORF8", "N", "ORF10"), ordered = T)
+
+sars2_ALL_genes <- tibble(
+  molecule = "SARS-CoV2",
+  gene = c("ORF1a", "ORF1b","S", "ORF3a", "E", "M", "ORF6", "ORF7A", "ORF7B", "ORF8", "N", "ORF10"),
+  start = c(266, 13468, 21563, 25393, 26245, 26523, 27202, 27394, 27756, 27894, 28274, 29558),
+  end = c(13483, 21555,25384, 26220, 26472, 27191, 27387, 27759, 27887, 28259, 29533, 29674),
+  strand = "forward",
+  direction = 1
+)
+# Specify order of gene for plotting
+sars2_ALL_genes$gene <- factor(sars2_ALL_genes$gene, levels=c("ORF1a", "ORF1b", "S", "ORF3a", "E", "M", "ORF6", "ORF7A", "ORF7B", "ORF8", "N", "ORF10"), ordered = T)
+```
+
+# IMPORT dRNAseq (minimap2 mapped)
+```{r}
+taiaroa <- read_delim("inputs/taiaroa_mapped_junctions.tsv", delim="\t")
+kim <- read_delim("inputs/kim_mapped_junctions.tsv", delim="\t")
+davidson <- read_delim("inputs/davidson_mapped_junctions.tsv", delim="\t")
+
+colnames(taiaroa) <- c("read_name", "five", "three")
+colnames(kim) <- c("read_name", "five", "three")
+colnames(davidson) <- c("read_name", "five", "three")
+
+
+label_genes_by_3prime <- function(in_tbl) {
+  in_tbl %>%
+    mutate(gene = "Intergenic") %>%
+    mutate(gene = ifelse(three>=21563, ifelse(three<=25384,"1. S", "Intergenic" ), "Intergenic")) %>%
+    mutate(gene = ifelse(three>=25393, ifelse(three<=26220,"2. ORF3a", gene ), gene)) %>%
+    mutate(gene = ifelse(three>=26245, ifelse(three<=26472,"3. E", gene ), gene)) %>%
+    mutate(gene = ifelse(three>=26523, ifelse(three<=27191,"4. M", gene ), gene)) %>%
+    mutate(gene = ifelse(three>=27202, ifelse(three<=27387,"5. ORF6", gene ), gene)) %>%
+    mutate(gene = ifelse(three>=27394, ifelse(three<=27887,"6. ORF7a/b", gene ), gene)) %>%
+    mutate(gene = ifelse(three>=27894, ifelse(three<=28259,"7. ORF8", gene ), gene)) %>%
+    mutate(gene = ifelse(three>=28274, ifelse(three<=29533,"8. N", gene ), gene)) %>%
+    mutate(gene = ifelse(three>=29558, ifelse(three<=29674,"9. ORF10", gene ), gene))
+}
+
+
+
+# Label genes by their 3' junctions
+davidson <- label_genes_by_3prime(davidson)
+
+taiaroa <- label_genes_by_3prime(taiaroa) 
+
+kim <- label_genes_by_3prime(kim)
+
+
+# Calculate junction length for each
+davidson <- davidson %>%
+  mutate(junction_length=three-five)
+
+taiaroa <- taiaroa %>%
+  mutate(junction_length=three-five)
+
+kim <- kim %>%
+  mutate(junction_length=three-five)
+
+
+
+# Coverage
+taiaroa_cov <- read_delim("inputs/taiaroa_mapped_mapped.cov", delim="\t", col_names=c("genome", "position", "coverage"))
+kim_cov <- read_delim("inputs/kim_mapped_mapped.cov", delim="\t", col_names=c("genome", "position", "coverage"))
+davidson_cov <- read_delim("inputs/davidson_mapped_mapped.cov", delim="\t", col_names=c("genome", "position", "coverage"))
+```
+
+# IMPORT Blanco-Melo short read data (minimap2 mapped)
+```{r}
+SRR11517741 <- read_delim("inputs/SRR11517741_junctions.txt", delim="\t")
+SRR11517742 <- read_delim("inputs/SRR11517742_junctions.txt", delim="\t")
+SRR11517743 <- read_delim("inputs/SRR11517743_junctions.txt", delim="\t")
+
+
+colnames(SRR11517741) <- c("read_name", "five", "three")
+colnames(SRR11517742) <- c("read_name", "five", "three")
+colnames(SRR11517743) <- c("read_name", "five", "three")
+
+SRR11517741 <- label_genes_by_3prime(SRR11517741)
+SRR11517742 <- label_genes_by_3prime(SRR11517742)
+SRR11517743 <- label_genes_by_3prime(SRR11517743)
+
+
+# Coverage
+SRR11517741_cov <- read_delim("inputs/SRR11517741.cov", delim="\t", col_names=c("genome", "position", "coverage"))
+SRR11517742_cov <- read_delim("inputs/SRR11517742.cov", delim="\t", col_names=c("genome", "position", "coverage"))
+SRR11517743_cov <- read_delim("inputs/SRR11517743.cov", delim="\t", col_names=c("genome", "position", "coverage"))
+```
+
+# IMPORT Blanco-Melo ferret data (minimap2 mapped)
+```{r}
+#Importing
+ferret_cov <- read_delim("inputs/blanco_melo_ferret/SRR11517855_8_ferret.cov", delim="\t", col_names=c("genome", "position", "coverage"))
+ferret_junc <- read_delim("inputs/blanco_melo_ferret/SRR11517855_8_ferret.junctions.txt", delim="\t")
+colnames(ferret_junc) <- c("name", 'five', 'three')
+```
+
+
+# IMPORT Finkel 4hpi, 24hpi (STAR mapped)
+```{r}
+# Import
+finkel_5hpi_1_cov <- read_delim("inputs/finkel/mRNA5_1.cov", delim="\t", col_names=c("genome", "position", "coverage"))
+finkel_5hpi_2_cov <- read_delim("inputs/finkel/mRNA5_2.cov", delim="\t", col_names=c("genome", "position", "coverage"))
+finkel_24hpi_1_cov <- read_delim("inputs/finkel/mRNA24_1.cov", delim="\t", col_names=c("genome", "position", "coverage"))
+finkel_24hpi_2_cov <- read_delim("inputs/finkel/mRNA24_2.cov", delim="\t", col_names=c("genome", "position", "coverage"))
+
+
+finkel_5hpi_1_junc <- read_delim("inputs/finkel/mRNA5_1.junctions.txt", delim="\t")
+finkel_5hpi_2_junc <- read_delim("inputs/finkel/mRNA5_2.junctions.txt", delim="\t")
+finkel_24hpi_1_junc <- read_delim("inputs/finkel/mRNA24_1.junctions.txt", delim="\t")
+finkel_24hpi_2_junc <- read_delim("inputs/finkel/mRNA24_2.junctions.txt", delim="\t")
+colnames(finkel_5hpi_1_junc) <- c("name", 'five', 'three')
+colnames(finkel_5hpi_2_junc) <- c("name", 'five', 'three')
+colnames(finkel_24hpi_1_junc) <- c("name", 'five', 'three')
+colnames(finkel_24hpi_2_junc) <- c("name", 'five', 'three')
+```
+
+# IMPORT Emanuel 4hpi, 24hpi (STAR mapped)
+```{r}
+emanual_total_4hpi_1_cov <- read_delim("inputs/emanual_totalRNA/SRR11550047.cov", delim="\t", col_names=c("genome", "position", "coverage"))
+emanual_total_4hpi_2_cov <- read_delim("inputs/emanual_totalRNA/SRR11550048.cov", delim="\t", col_names=c("genome", "position", "coverage"))
+emanual_total_12hpi_1_cov <- read_delim("inputs/emanual_totalRNA/SRR11550043.cov", delim="\t", col_names=c("genome", "position", "coverage"))
+emanual_total_12hpi_2_cov <- read_delim("inputs/emanual_totalRNA/SRR11550044.cov", delim="\t", col_names=c("genome", "position", "coverage"))
+emanual_total_24hpi_1_cov <- read_delim("inputs/emanual_totalRNA/SRR11550045.cov", delim="\t", col_names=c("genome", "position", "coverage"))
+emanual_total_24hpi_2_cov <- read_delim("inputs/emanual_totalRNA/SRR11550046.cov", delim="\t", col_names=c("genome", "position", "coverage"))
+
+emanual_total_4hpi_1_junc <- read_delim("inputs/emanual_totalRNA/SRR11550047.junctions.txt", delim="\t")
+emanual_total_4hpi_2_junc <- read_delim("inputs/emanual_totalRNA/SRR11550048.junctions.txt", delim="\t")
+emanual_total_12hpi_1_junc <- read_delim("inputs/emanual_totalRNA/SRR11550043.junctions.txt", delim="\t")
+emanual_total_12hpi_2_junc <- read_delim("inputs/emanual_totalRNA/SRR11550044.junctions.txt", delim="\t")
+emanual_total_24hpi_1_junc <- read_delim("inputs/emanual_totalRNA/SRR11550045.junctions.txt", delim="\t")
+emanual_total_24hpi_2_junc <- read_delim("inputs/emanual_totalRNA/SRR11550046.junctions.txt", delim="\t")
+colnames(emanual_total_4hpi_1_junc) <- c("name", 'five', 'three')
+colnames(emanual_total_4hpi_2_junc) <- c("name", 'five', 'three')
+colnames(emanual_total_12hpi_1_junc) <- c("name", 'five', 'three')
+colnames(emanual_total_12hpi_2_junc) <- c("name", 'five', 'three')
+colnames(emanual_total_24hpi_1_junc) <- c("name", 'five', 'three')
+colnames(emanual_total_24hpi_2_junc) <- c("name", 'five', 'three')
+```
+# IMPORT Emmanual polyA timecourse (STAR mapped)
+```{r}
+
+```
+
+
+# IMPORT Suzuki organoids (minimap2 mapped)
+```{r}
+# Import
+suzuki_bronchial_5dpi_1_cov <- read_delim("inputs/suzuki_bronchial_organoids/minimap2/SRR11811022.cov", delim="\t", col_names=c("genome", "position", "coverage"))
+suzuki_bronchial_5dpi_2_cov <- read_delim("inputs/suzuki_bronchial_organoids/minimap2/SRR11811023.cov", delim="\t", col_names=c("genome", "position", "coverage"))
+suzuki_bronchial_5dpi_3_cov <- read_delim("inputs/suzuki_bronchial_organoids/minimap2/SRR11811024.cov", delim="\t", col_names=c("genome", "position", "coverage"))
+
+
+suzuki_bronchial_5dpi_1_junc <- read_delim("inputs/suzuki_bronchial_organoids/minimap2/SRR11811022.junctions.txt", delim="\t")
+suzuki_bronchial_5dpi_2_junc <- read_delim("inputs/suzuki_bronchial_organoids/minimap2/SRR11811023.junctions.txt", delim="\t")
+suzuki_bronchial_5dpi_3_junc <- read_delim("inputs/suzuki_bronchial_organoids/minimap2/SRR11811024.junctions.txt", delim="\t")
+
+colnames(suzuki_bronchial_5dpi_1_junc) <- c("name", 'five', 'three')
+colnames(suzuki_bronchial_5dpi_2_junc) <- c("name", 'five', 'three')
+colnames(suzuki_bronchial_5dpi_3_junc) <- c("name", 'five', 'three')
+```
+
+
+
+
+# Plotting 3' junctions
+```{r}
+plot_cannonical_3prime_junctions <- function(in_tbl, ymax=110000) {
+  ggplot() +
+    geom_histogram(data=in_tbl%>%filter(three>=21000, five<=100), aes(x=three), binwidth = 20, color="black") +
+    theme_minimal() + 
+    scale_y_continuous(limits=c(0,ymax)) +
+    theme(panel.grid.minor = element_blank()) +
+    theme(plot.title = element_text(size=10),
+          axis.text.x = element_text(size = 10, angle = 45, hjust = .5, vjust = .5)) +
+    guides(fill=guide_legend(title="Gene")) +
+    xlab("3'") + 
+    ylab("Count") +
+    geom_vline(xintercept = c(21563, 25393, 26245, 26523, 27202, 27394, 27756, 27894, 28274,29558) , 
+                color = "black",
+                size=0.2,
+                alpha=0.5,
+                linetype="dashed") +
+    scale_fill_manual(values=c("#BFC9CA", "#A93226", "#9B59B6", "#AED6F1", "#2471A3", "#48C9B0", "#1E8449", "#F7DC6F", "#AF601A" , "#5D6D7E")) +
+    geom_gene_arrow(data = sars2_genes, aes(xmin = start, xmax = end, y = ymax, fill = gene, label=gene))
+  
+}
+
+# NANOPORE
+#---------------------------------------------------------------------------------------#
+taiaroa_3junctions_cannonical <- plot_cannonical_3prime_junctions(taiaroa, 30000)
+taiaroa_3junctions_cannonical
+ggsave("figures/canonical_3prime_junctions/taiaroa_3junctions_cannonical.pdf", taiaroa_3junctions_cannonical, height = 10, width = 10, units="cm")
+ggsave("figures/canonical_3prime_junctions/taiaroa_3junctions_cannonical.svg", taiaroa_3junctions_cannonical, height = 10, width = 10, units="cm")
+saveRDS(taiaroa_3junctions_cannonical, "rds/canonical_3prime_junctions/taiaroa_3junctions_cannonical.rds")
+
+
+kim_3junctions_cannonical <-  plot_cannonical_3prime_junctions(kim, 120000)
+kim_3junctions_cannonical
+ggsave("figures/canonical_3prime_junctions/kim_3junctions_cannonical.pdf", kim_3junctions_cannonical, height = 10, width = 10, units="cm")
+ggsave("figures/canonical_3prime_junctions/kim_3junctions_cannonical.svg", kim_3junctions_cannonical, height = 10, width = 10, units="cm")
+saveRDS(kim_3junctions_cannonical, "rds/canonical_3prime_junctions/kim_3junctions_cannonical.rds")
+
+davidson_3junctions_cannonical <- plot_cannonical_3prime_junctions(davidson, 110000)
+davidson_3junctions_cannonical
+ggsave("figures/canonical_3prime_junctions/davidson_3junctions_cannonical.pdf", davidson_3junctions_cannonical, height = 10, width = 10, units="cm")
+ggsave("figures/canonical_3prime_junctions/davidson_3junctions_cannonical.svg", davidson_3junctions_cannonical, height = 10, width = 10, units="cm")
+saveRDS(davidson_3junctions_cannonical, "rds/canonical_3prime_junctions/davidson_3junctions_cannonical.rds")
+
+
+# short read
+#---------------------------------------------------------------------------------------#
+suzuki_bronchial_5dpi_1_3junctions_cannonical <- plot_cannonical_3prime_junctions(suzuki_bronchial_5dpi_1_junc, 50)
+suzuki_bronchial_5dpi_1_3junctions_cannonical
+ggsave("figures/canonical_3prime_junctions/suzuki_bronchial_5dpi_1_3junctions_cannonical.pdf", suzuki_bronchial_5dpi_1_3junctions_cannonical, height = 10, width = 10, units="cm")
+ggsave("figures/canonical_3prime_junctions/suzuki_bronchial_5dpi_1_3junctions_cannonical.svg", suzuki_bronchial_5dpi_1_3junctions_cannonical, height = 10, width = 10, units="cm")
+saveRDS(suzuki_bronchial_5dpi_1_3junctions_cannonical, "rds/canonical_3prime_junctions/suzuki_bronchial_5dpi_1_3junctions_cannonical.rds")
+
+
+ferret_3junctions_cannonical <- plot_cannonical_3prime_junctions(ferret_junc, 200)
+ferret_3junctions_cannonical
+ggsave("figures/canonical_3prime_junctions/ferret_3junctions_cannonical.pdf", ferret_3junctions_cannonical, height = 10, width = 10, units="cm")
+ggsave("figures/canonical_3prime_junctions/ferret_3junctions_cannonical.svg", ferret_3junctions_cannonical, height = 10, width = 10, units="cm")
+saveRDS(ferret_3junctions_cannonical, "rds/canonical_3prime_junctions/ferret_3junctions_cannonical.rds")
+
+
+finkel_24hpi_1_3junctions_cannonical <- plot_cannonical_3prime_junctions(finkel_24hpi_1_junc, 70000)
+finkel_24hpi_1_3junctions_cannonical
+ggsave("figures/canonical_3prime_junctions/finkel_24hpi_1_3junctions_cannonical.pdf", finkel_24hpi_1_3junctions_cannonical, height = 10, width = 10, units="cm")
+ggsave("figures/canonical_3prime_junctions/finkel_24hpi_1_3junctions_cannonical.svg", finkel_24hpi_1_3junctions_cannonical, height = 10, width = 10, units="cm")
+saveRDS(finkel_24hpi_1_3junctions_cannonical, "rds/canonical_3prime_junctions/finkel_24hpi_1_3junctions_cannonical.rds")
+
+
+SRR11517741_3junctions_cannonical <- plot_cannonical_3prime_junctions(SRR11517741, 200000)
+SRR11517741_3junctions_cannonical
+ggsave("figures/canonical_3prime_junctions/SRR11517741_3junctions_cannonical.pdf", SRR11517741_3junctions_cannonical, height = 10, width = 10, units="cm")
+ggsave("figures/canonical_3prime_junctions/SRR11517741_3junctions_cannonical.svg", SRR11517741_3junctions_cannonical, height = 10, width = 10, units="cm")
+saveRDS(SRR11517741_3junctions_cannonical, "rds/canonical_3prime_junctions/SRR11517741_3junctions_cannonical.rds")
+
+
+emanual_total_24hpi_1_3junctions_cannonical <- plot_cannonical_3prime_junctions(emanual_total_24hpi_1_junc, 4000)
+emanual_total_24hpi_1_3junctions_cannonical
+ggsave("figures/canonical_3prime_junctions/emanual_total_24hpi_1_3junctions_cannonical.pdf", emanual_total_24hpi_1_3junctions_cannonical, height = 10, width = 10, units="cm")
+ggsave("figures/canonical_3prime_junctions/emanual_total_24hpi_1_3junctions_cannonical.svg", emanual_total_24hpi_1_3junctions_cannonical, height = 10, width = 10, units="cm")
+saveRDS(emanual_total_24hpi_1_3junctions_cannonical, "rds/canonical_3prime_junctions/emanual_total_24hpi_1_3junctions_cannonical.rds")
+```
+
