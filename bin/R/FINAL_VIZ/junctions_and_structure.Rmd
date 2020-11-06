@@ -1,0 +1,611 @@
+---
+title: "SARS-CoV-2: Visualization of long-read junctions."
+---
+
+# Load libraries
+```{r}
+library(tidyverse)
+library(scales) #allows use of "comma" to replace i.e. 1e6 with 1,000,000 during plotting
+
+library(pheatmap)
+library(patchwork) # allows composing/orienting plots
+library(RColorBrewer)
+
+# geneplots
+library(gggenes)
+
+
+library(reshape2) #for melt function
+library(ggrepel) # labeling points on a dotplot
+
+library(hashmap) # use column as key for another column
+
+library(ggrepel) # repelled labels
+
+
+```
+
+# gggenes tibbles
+```{r}
+sars2_orf1a_gene <- tibble(
+  molecule = "SARS-CoV2_ORF1a",
+  gene = c("ORF1a", "ORF1b", "S"),
+  start = c(266, 13468, 21563),
+  end = c(13483, 21555, 25384),
+  strand = "forward",
+  direction = 1
+)
+
+sars2_genes <- tibble(
+  molecule = "SARS-CoV2",
+  gene = c("S", "ORF3a", "E", "M", "ORF6", "ORF7A", "ORF7B", "ORF8", "N", "ORF10"),
+  start = c(21563, 25393, 26245, 26523, 27202, 27394, 27756, 27894, 28274, 29558),
+  end = c(25384, 26220, 26472, 27191, 27387, 27759, 27887, 28259, 29533, 29674),
+  strand = "forward",
+  direction = 1
+)
+# Specify order of gene for plotting
+sars2_genes$gene <- factor(sars2_genes$gene, levels=c("S", "ORF3a", "E", "M", "ORF6", "ORF7A", "ORF7B", "ORF8", "N", "ORF10"), ordered = T)
+
+sars2_ALL_genes <- tibble(
+  molecule = "SARS-CoV2",
+  gene = c("ORF1a", "ORF1b","S", "ORF3a", "E", "M", "ORF6", "ORF7A", "ORF7B", "ORF8", "N", "ORF10"),
+  start = c(266, 13468, 21563, 25393, 26245, 26523, 27202, 27394, 27756, 27894, 28274, 29558),
+  end = c(13483, 21555,25384, 26220, 26472, 27191, 27387, 27759, 27887, 28259, 29533, 29674),
+  strand = "forward",
+  direction = 1
+)
+# Specify order of gene for plotting
+sars2_ALL_genes$gene <- factor(sars2_ALL_genes$gene, levels=c("ORF1a", "ORF1b", "S", "ORF3a", "E", "M", "ORF6", "ORF7A", "ORF7B", "ORF8", "N", "ORF10"), ordered = T)
+```
+
+# IMPORT dRNAseq (minimap2 mapped)
+```{r}
+taiaroa <- read_delim("inputs/taiaroa_mapped_junctions.tsv", delim="\t")
+kim <- read_delim("inputs/kim_mapped_junctions.tsv", delim="\t")
+davidson <- read_delim("inputs/davidson_mapped_junctions.tsv", delim="\t")
+
+colnames(taiaroa) <- c("read_name", "five", "three")
+colnames(kim) <- c("read_name", "five", "three")
+colnames(davidson) <- c("read_name", "five", "three")
+
+
+label_genes_by_3prime <- function(in_tbl) {
+  in_tbl %>%
+    mutate(gene = "Intergenic") %>%
+    mutate(gene = ifelse(three>=21563, ifelse(three<=25384,"1. S", "Intergenic" ), "Intergenic")) %>%
+    mutate(gene = ifelse(three>=25393, ifelse(three<=26220,"2. ORF3a", gene ), gene)) %>%
+    mutate(gene = ifelse(three>=26245, ifelse(three<=26472,"3. E", gene ), gene)) %>%
+    mutate(gene = ifelse(three>=26523, ifelse(three<=27191,"4. M", gene ), gene)) %>%
+    mutate(gene = ifelse(three>=27202, ifelse(three<=27387,"5. ORF6", gene ), gene)) %>%
+    mutate(gene = ifelse(three>=27394, ifelse(three<=27887,"6. ORF7a/b", gene ), gene)) %>%
+    mutate(gene = ifelse(three>=27894, ifelse(three<=28259,"7. ORF8", gene ), gene)) %>%
+    mutate(gene = ifelse(three>=28274, ifelse(three<=29533,"8. N", gene ), gene)) %>%
+    mutate(gene = ifelse(three>=29558, ifelse(three<=29674,"9. ORF10", gene ), gene))
+}
+
+
+
+# Label genes by their 3' junctions
+davidson <- label_genes_by_3prime(davidson)
+
+taiaroa <- label_genes_by_3prime(taiaroa) 
+
+kim <- label_genes_by_3prime(kim)
+
+
+# Calculate junction length for each
+davidson <- davidson %>%
+  mutate(junction_length=three-five)
+
+taiaroa <- taiaroa %>%
+  mutate(junction_length=three-five)
+
+kim <- kim %>%
+  mutate(junction_length=three-five)
+```
+
+# Import and normalize Rouskin lab structures
+```{r}
+
+exposure_1 <- read_delim("inputs/rouskin_structure/GSM4656059_sars2vivo1_SARS2MN985325WA_1_29882_popavg_reacts.txt", delim="\t")
+
+
+# Normalize
+#----------------#
+
+normalize_structure_values <- function(in_tbl) {
+  
+  # Find median of top 10% of mismatches
+  top <- top_n(in_tbl, nrow(in_tbl)/20, Mismatches)
+  top_median <- top %>%
+    pull(Mismatches) %>%
+    median()
+  in_tbl$Mismatches <- in_tbl$Mismatches/top_median
+  
+  # Reduce to 1 anything that is greater than 1
+  in_tbl <- in_tbl %>%
+    mutate(Mismatches = ifelse(Mismatches>1, 1, Mismatches))
+  
+  # Return result
+  in_tbl %>%
+    select(Position, Mismatches)
+}
+
+
+exposure_1norm <- normalize_structure_values(structure_1)
+```
+
+
+# Correlate junctions wtih DMS values - only noncanonical
+```{r}
+# Make key for identifying TRS locations
+trs_locations <- tibble(
+  gene = c("S", "ORF3a", "E", "M", "ORF6", "ORF7a", "ORF8", "N"),
+  TRS = c(21555, 25384, 26236, 26472, 27040, 27387, 27887, 28259)
+)
+trs_map <- hashmap(trs_locations$gene, trs_locations$TRS)
+
+classify_nc_c <- function(in_tbl) {
+  in_tbl %>%
+  mutate(classification = ifelse(
+    five < 100 & three > trs_map[["S"]]-15 & three < trs_map[["S"]]+15,
+    "Canonical",
+    ""
+    )) %>%
+  mutate(classification = ifelse(
+    five < 100 & three > trs_map[["ORF3a"]]-15 & three < trs_map[["ORF3a"]]+15,
+    "Canonical",
+    classification
+    )) %>%
+  mutate(classification = ifelse(
+    five < 100 & three > trs_map[["E"]]-15 & three < trs_map[["E"]]+15,
+    "Canonical",
+    classification
+    )) %>%
+  mutate(classification = ifelse(
+    five < 100 & three > trs_map[["M"]]-15 & three < trs_map[["M"]]+15,
+    "Canonical",
+    classification
+    )) %>%
+  mutate(classification = ifelse(
+    five < 100 & three > trs_map[["ORF6"]]-15 & three < trs_map[["ORF6"]]+15,
+    "Canonical",
+    classification
+    )) %>%
+  mutate(classification = ifelse(
+    five < 100 & three > trs_map[["ORF7a"]]-15 & three < trs_map[["ORF7a"]]+15,
+    "Canonical",
+    classification
+    )) %>%
+  mutate(classification = ifelse(
+    five < 100 & three > trs_map[["ORF8"]]-15 & three < trs_map[["ORF8"]]+15,
+    "Canonical",
+    classification
+    )) %>%
+  mutate(classification = ifelse(
+    five < 100 & three > trs_map[["N"]]-15 & three < trs_map[["N"]]+15,
+    "Canonical",
+    classification
+    )) %>%
+  mutate(classification = ifelse(classification == "", "Non-canonical", classification)) %>%
+  mutate(classification = ifelse(
+    five < 49 | five > 89,
+    "Non-canonical",
+    classification
+    )) # This last one makes sure 5' is within 20bp of TRS-L
+}
+
+kim_classified <- classify_nc_c(kim)
+kim_noncanonical <- kim_classified %>%
+  filter(classification == "Non-canonical")
+
+
+kim_3tally <- kim_noncanonical %>%
+  group_by(three) %>%
+  tally() %>%
+  arrange(-n) %>%
+  mutate(percentage = n*100/sum(n))
+colnames(kim_3tally) <- c("Position", "n", "percentage")
+
+
+kim_5tally <- kim_noncanonical %>%
+  group_by(five) %>%
+  tally() %>%
+  arrange(-n) %>%
+  mutate(percentage = n*100/sum(n))
+colnames(kim_5tally) <- c("Position", "n", "percentage")
+
+
+
+kim_exposure_3 <- inner_join(kim_3tally, exposure_1norm, by="Position")
+kim_exposure_5 <- inner_join(kim_5tally, exposure_1norm, by="Position")
+
+
+
+cor(kim_exposure_3$n, kim_exposure_3$Mismatches, method = "spearman")
+cor(kim_exposure_5$n, kim_exposure_5$Mismatches, method = "spearman")
+
+
+kim_exposure_3_plt <- ggplot(kim_exposure_3) +
+  geom_point(aes(x=n, y=Mismatches)) +
+  scale_y_log10() + scale_x_log10() + annotation_logticks(sides="lb") + 
+  ylab("DMS Signal") + xlab("Number of Non-Canonical\n3' Junctions") +
+  theme_minimal(base_size=20)
+kim_exposure_3_plt
+
+kim_exposure_5plt <- ggplot(kim_exposure_5) +
+  geom_point(aes(x=n, y=Mismatches)) +
+  scale_y_log10() + scale_x_log10() + annotation_logticks(sides="lb") + 
+  ylab("DMS Signal") + xlab("Number of Non-Canonical\n5' Junctions") +
+  theme_minimal(base_size=20)
+kim_exposure_5plt
+
+kim_exposure_agg_plt <- kim_exposure_5plt + 
+  kim_exposure_3_plt + theme(axis.text.y=element_blank(),
+                             axis.ticks.y=element_blank(),
+                             axis.title.y=element_blank())
+
+ggsave("figures/structure/kim_exposure_agg_plt.pdf", kim_exposure_agg_plt, height = 10, width = 20, units="cm")
+saveRDS(kim_exposure_agg_plt, "rds/structure/kim_exposure_agg_plt.rds")
+
+### Above, should probably just do percentage of non-canonical junctions, rather than number.
+
+### Really need to look at the folded, "structured/paired vs unstructured/unpaired" data, and do that analysis. But above shows me that there aren't more junctions on exposed bases (note - there can be exposed bases even in very structured regions.. so, more important to look at the structured vs unstructured)
+
+```
+
+# Import and process the dot structure
+# dots = unpaired, parentheses = paired
+```{r}
+dot_structure <- read_delim("inputs/rouskin_structure/parsed_structures.txt", delim="\t")
+
+dot_structure <- dot_structure %>%
+  mutate(paired_status = ifelse(dot == ".", "Unpaired", "Paired"))
+colnames(dot_structure)[1] <- c("Position")
+
+### need to calculate structured vs unstructured stretches... that'll be more accurate. Requires python, because I'm not as good in R.
+
+```
+
+
+# Check association between dot structure and non-canonical junctions
+```{r}
+kim_5_dot <- dot_structure %>%
+  inner_join(kim_5tally, by="Position")
+
+kim_3_dot <- dot_structure %>%
+  inner_join(kim_3tally, by="Position")
+
+
+kim_5_dot %>% filter(structure_status != "mixed") %>%
+  ggplot() +
+  geom_boxplot(aes(x=structure_status, y=percentage)) + scale_y_log10() +
+  geom_jitter(aes(x=structure_status, y=percentage))
+
+
+kim_3_dot %>% filter(structure_status != "mixed") %>%
+  ggplot() +
+  geom_boxplot(aes(x=structure_status, y=percentage)) + scale_y_log10() +
+  geom_jitter(aes(x=structure_status, y=percentage))
+
+
+
+kim_5_structured_precentages <- kim_5_dot %>%
+  filter(structure_status=="structured") %>%
+  pull(percentage)
+kim_5_unstructured_precentages <- kim_5_dot %>%
+  filter(structure_status=="unstructured") %>%
+  pull(percentage)
+
+kim_3_structured_precentages <- kim_3_dot %>%
+  filter(structure_status=="structured") %>%
+  pull(percentage)
+kim_3_unstructured_precentages <- kim_3_dot %>%
+  filter(structure_status=="unstructured") %>%
+  pull(percentage)
+
+mean(kim_5_structured_precentages)
+mean(kim_5_unstructured_precentages)
+
+mean(kim_3_structured_precentages)
+mean(kim_3_unstructured_precentages)
+
+sum(kim_3_structured_precentages)
+sum(kim_3_unstructured_precentages)
+
+t.test(kim_5_structured_precentages, kim_5_unstructured_precentages)
+t.test(kim_3_structured_precentages, kim_3_unstructured_precentages)
+
+
+
+table(dot_structure$structure_status)
+```
+
+
+# Plot sum of nc-junction percentages in structured vs unstructured regions
+```{r}
+
+# Dot - get counts of structured/unstructured bases
+
+
+# Sum percentages of structured and non-structured
+kim_3_sums <- kim_3_dot %>% filter(structure_status != "mixed") %>%
+  group_by(structure_status) %>%
+  mutate(s = sum(percentage)) %>%
+  distinct(structure_status, s)
+
+
+
+kim_3_sums %>%
+  ggplot()
+
+
+tail(kim_3_dot, 1000)
+```
+
+
+
+# 
+```{r}
+dot_structure %>%
+  ggplot() + 
+  geom_point(aes(x=Position, y=structure_status))
+
+# Compare structured and unstructred counts from 10K-20K and 20K-end
+
+dot_structure %>%
+  filter(Position <20000, Position >10000) %>%
+  group_by(structure_status) %>% tally() %>%
+  mutate(p = n*100/sum(n))
+  
+dot_structure %>%
+  filter(Position >20000) %>%
+  group_by(structure_status) %>% tally() %>%
+  mutate(p = n*100/sum(n))
+
+
+
+
+# Within N, 3x as much unstructured as structured regions
+dot_structure %>%
+  filter(Position >28274, Position < 29533) %>%
+  group_by(structure_status) %>% tally() %>%
+  mutate(p = n*100/sum(n))
+
+
+
+# Within *N*, 10-fold as many junctions
+# within unstructured regions as structured
+kim_3_dot %>%
+  filter(Position >28274, Position < 29533) %>%
+  filter(structure_status=="unstructured") %>%
+  pull(percentage) %>% sum
+kim_3_dot %>%
+  filter(Position >28274, Position < 29533) %>%
+  filter(structure_status=="structured") %>%
+  pull(percentage) %>% sum
+```
+
+
+
+
+
+# Lets look at 3' junctions...
+```{r}
+
+ggplot() + 
+geom_col(data=kim_3_dot %>% filter(Position >= 21000),
+               aes(x=Position, y = percentage, color=structure_status, fill =structure_status ),
+               binwidth = 20) +
+    theme_minimal() + 
+    scale_y_continuous(limits=c(0,1)) +
+    theme(panel.grid.minor = element_blank()) +
+    theme(plot.title = element_text(size=10),
+          axis.text.x = element_text(size = 10, angle = 45, hjust = .5, vjust = .5)) +
+    guides(fill=guide_legend(title="Gene")) +
+    xlab("3'") + 
+    ylab("Count") +
+    geom_vline(xintercept = c(21563, 25393, 26245, 26523, 27202, 27394, 27756, 27894, 28274,29558) , 
+                color = "black",
+                size=0.2,
+                alpha=0.5,
+                linetype="dashed") +
+    #scale_fill_manual(values=c("#BFC9CA", "#A93226", "#9B59B6", "#AED6F1", "#2471A3", "#48C9B0", "#1E8449", "#F7DC6F", "#AF601A" , "#5D6D7E")) +
+    geom_gene_arrow(data = sars2_genes, aes(xmin = start, xmax = end, y = 5000, label=gene))
+
+
+ggplot() + 
+geom_col(data=kim_3_dot %>% filter(Position >28274, Position < 29533, structure_status!="mixed"),
+               aes(x=Position, y = percentage, color=structure_status, fill =structure_status )) +
+    theme_minimal() + 
+    scale_y_continuous(limits=c(0,1)) +
+    theme(panel.grid.minor = element_blank()) +
+    theme(plot.title = element_text(size=10),
+          axis.text.x = element_text(size = 10, angle = 45, hjust = .5, vjust = .5)) +
+    guides(fill=guide_legend(title="Gene")) +
+    xlab("3'") + 
+    ylab("Percentage of non-canonical Junctions") +
+    geom_vline(xintercept = c(28274,29558) , 
+                color = "black",
+                size=0.2,
+                alpha=0.5,
+                linetype="dashed") 
+    #scale_fill_manual(values=c("#BFC9CA", "#A93226", "#9B59B6", "#AED6F1", "#2471A3", "#48C9B0", "#1E8449", "#F7DC6F", "#AF601A" , "#5D6D7E")) +
+    #geom_gene_arrow(data = sars2_genes, aes(xmin = start, xmax = end, y = 5000, label=gene))
+
+
+ggplot() + 
+geom_col(data=kim_3_dot %>% filter(Position >28274, Position < 29533, structure_status=="mixed"),
+               aes(x=Position, y = percentage, color=structure_status, fill =structure_status )) +
+    theme_minimal() + 
+    scale_y_continuous(limits=c(0,1)) +
+    theme(panel.grid.minor = element_blank()) +
+    theme(plot.title = element_text(size=10),
+          axis.text.x = element_text(size = 10, angle = 45, hjust = .5, vjust = .5)) +
+    guides(fill=guide_legend(title="Gene")) +
+    xlab("3'") + 
+    ylab("Percentage of non-canonical Junctions") +
+    geom_vline(xintercept = c(28274,29558) , 
+                color = "black",
+                size=0.2,
+                alpha=0.5,
+                linetype="dashed") 
+
+ggplot() + 
+geom_col(data=kim_3_dot %>% filter(Position >28274, Position < 29533),
+               aes(x=Position, y = percentage, color=structure_status, fill =structure_status )) +
+    theme_minimal() + 
+    scale_y_continuous(limits=c(0,1)) +
+    theme(panel.grid.minor = element_blank()) +
+    theme(plot.title = element_text(size=10),
+          axis.text.x = element_text(size = 10, angle = 45, hjust = .5, vjust = .5)) +
+    guides(fill=guide_legend(title="Gene")) +
+    xlab("3'") + 
+    ylab("Percentage of non-canonical Junctions") +
+    geom_vline(xintercept = c(28274,29558) , 
+                color = "black",
+                size=0.2,
+                alpha=0.5,
+                linetype="dashed") 
+
+
+
+kim_3_dot %>% filter(Position >28274, Position < 29533, structure_status!="mixed") %>% mutate(s = sum(n)) %>% pull(s) %>% unique()
+kim_3_dot%>% filter(structure_status!="mixed") %>% mutate(s = sum(n)) %>% pull(s) %>% unique()
+kim_3_dot%>% mutate(s = sum(n)) %>% pull(s) %>% unique()
+
+```
+
+
+
+# More 3' junctn by status
+```{r}
+# Full
+ggplot() + 
+geom_col(data=kim_3_dot %>% filter(Position >20000, Position < 29533),
+               aes(x=Position, y = percentage, color=structure_status, fill =structure_status )) +
+    theme_minimal() + 
+    scale_y_continuous(limits=c(0,1)) +
+    theme(panel.grid.minor = element_blank()) +
+    theme(plot.title = element_text(size=10),
+          axis.text.x = element_text(size = 10, angle = 45, hjust = .5, vjust = .5)) +
+    guides(fill=guide_legend(title="Gene")) +
+    xlab("3'") + 
+    ylab("Percentage of non-canonical Junctions") +
+    geom_vline(xintercept = c(28274,29558) , 
+                color = "black",
+                size=0.2,
+                alpha=0.5,
+                linetype="dashed") 
+
+# only structured
+ggplot() + 
+geom_col(data=kim_3_dot %>% filter(Position >20000, Position < 29533, structure_status=="structured"),
+               aes(x=Position, y = percentage, color=structure_status, fill =structure_status )) +
+    theme_minimal() + 
+    scale_y_continuous(limits=c(0,1)) +
+    theme(panel.grid.minor = element_blank()) +
+    theme(plot.title = element_text(size=10),
+          axis.text.x = element_text(size = 10, angle = 45, hjust = .5, vjust = .5)) +
+    guides(fill=guide_legend(title="Gene")) +
+    xlab("3'") + 
+    ylab("Percentage of non-canonical Junctions") +
+    geom_vline(xintercept = c(28274,29558) , 
+                color = "black",
+                size=0.2,
+                alpha=0.5,
+                linetype="dashed") 
+
+
+# only unstructured
+# only structured
+ggplot() + 
+geom_col(data=kim_3_dot %>% filter(Position >20000, Position < 29533, structure_status=="unstructured"),
+               aes(x=Position, y = percentage, color=structure_status, fill =structure_status )) +
+    theme_minimal() + 
+    scale_y_continuous(limits=c(0,1)) +
+    theme(panel.grid.minor = element_blank()) +
+    theme(plot.title = element_text(size=10),
+          axis.text.x = element_text(size = 10, angle = 45, hjust = .5, vjust = .5)) +
+    guides(fill=guide_legend(title="Gene")) +
+    xlab("3'") + 
+    ylab("Percentage of non-canonical Junctions") +
+    geom_vline(xintercept = c(28274,29558) , 
+                color = "black",
+                size=0.2,
+                alpha=0.5,
+                linetype="dashed")
+
+# No mixed
+# only unstructured
+# only structured
+ggplot() + 
+geom_col(data=kim_3_dot %>% filter(Position >20000, Position < 29533, structure_status!="mixed"),
+               aes(x=Position, y = percentage, color=structure_status, fill =structure_status )) +
+    theme_minimal() + 
+    scale_y_continuous(limits=c(0,1)) +
+    theme(panel.grid.minor = element_blank()) +
+    theme(plot.title = element_text(size=10),
+          axis.text.x = element_text(size = 10, angle = 45, hjust = .5, vjust = .5)) +
+    guides(fill=guide_legend(title="Gene")) +
+    xlab("3'") + 
+    ylab("Percentage of non-canonical Junctions") +
+    geom_vline(xintercept = c(28274,29558) , 
+                color = "black",
+                size=0.2,
+                alpha=0.5,
+                linetype="dashed")
+
+```
+
+
+# TMP - what is the ORF6 TRS-mediated junction point?
+```{r}
+kim %>% filter(three > 26523, three < 27191) %>% group_by(three) %>% tally() %>%
+  ggplot() + 
+  geom_col(aes(x=three, y=n), color="black")
+
+kim %>% filter(three > 26523, three < 27191) %>% group_by(three) %>% tally() %>% arrange(-n)
+
+#ORF6 TRS location: 27040
+```
+
+
+
+
+
+
+# Correlate junctions wtih DMS values - including canonical
+```{r}
+
+# kim_3tally <- kim %>%
+#   group_by(three) %>%
+#   tally() %>%
+#   arrange(-n)
+# colnames(kim_3tally) <- c("Position", "n")
+# 
+# 
+# kim_5tally <- kim %>%
+#   group_by(five) %>%
+#   tally() %>%
+#   arrange(-n)
+# colnames(kim_5tally) <- c("Position", "n")
+# 
+# 
+# 
+# kim_structure_3 <- inner_join(kim_3tally, structure_1norm, by="Position")
+# kim_structure_5 <- inner_join(kim_5tally, structure_1norm, by="Position")
+# 
+# 
+# 
+# cor(kim_structure_3$n, kim_structure_3$Mismatches, method = "spearman")
+# cor(kim_structure_5$n, kim_structure_5$Mismatches, method = "spearman")
+# 
+# 
+# ggplot(kim_structure_3) +
+#   geom_point(aes(x=n, y=Mismatches))
+# 
+# ggplot(kim_structure_5) +
+#   geom_point(aes(x=n, y=Mismatches))
+```

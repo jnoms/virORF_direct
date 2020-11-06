@@ -1,0 +1,329 @@
+---
+title: "SARS-CoV-2: Visualization of long-read junctions."
+output: html_notebook
+---
+
+# Load libraries
+```{r}
+library(tidyverse)
+library(scales) #allows use of "comma" to replace i.e. 1e6 with 1,000,000 during plotting
+
+library(pheatmap)
+library(patchwork) # allows composing/orienting plots
+library(RColorBrewer)
+
+# geneplots
+library(gggenes)
+
+
+library(reshape2) #for melt function
+library(ggrepel) # labeling points on a dotplot
+
+library(hashmap) # use column as key for another column
+
+```
+
+# gggenes tibbles
+```{r}
+sars2_orf1a_gene <- tibble(
+  molecule = "SARS-CoV2_ORF1a",
+  gene = c("ORF1a", "ORF1b", "S"),
+  start = c(266, 13468, 21563),
+  end = c(13483, 21555, 25384),
+  strand = "forward",
+  direction = 1
+)
+
+sars2_genes <- tibble(
+  molecule = "SARS-CoV2",
+  gene = c("S", "ORF3a", "E", "M", "ORF6", "ORF7A", "ORF7B", "ORF8", "N", "ORF10"),
+  start = c(21563, 25393, 26245, 26523, 27202, 27394, 27756, 27894, 28274, 29558),
+  end = c(25384, 26220, 26472, 27191, 27387, 27759, 27887, 28259, 29533, 29674),
+  strand = "forward",
+  direction = 1
+)
+# Specify order of gene for plotting
+sars2_genes$gene <- factor(sars2_genes$gene, levels=c("S", "ORF3a", "E", "M", "ORF6", "ORF7A", "ORF7B", "ORF8", "N", "ORF10"), ordered = T)
+
+sars2_ALL_genes <- tibble(
+  molecule = "SARS-CoV2",
+  gene = c("ORF1a", "ORF1b","S", "ORF3a", "E", "M", "ORF6", "ORF7A", "ORF7B", "ORF8", "N", "ORF10"),
+  start = c(266, 13468, 21563, 25393, 26245, 26523, 27202, 27394, 27756, 27894, 28274, 29558),
+  end = c(13483, 21555,25384, 26220, 26472, 27191, 27387, 27759, 27887, 28259, 29533, 29674),
+  strand = "forward",
+  direction = 1
+)
+# Specify order of gene for plotting
+sars2_ALL_genes$gene <- factor(sars2_ALL_genes$gene, levels=c("ORF1a", "ORF1b", "S", "ORF3a", "E", "M", "ORF6", "ORF7A", "ORF7B", "ORF8", "N", "ORF10"), ordered = T)
+```
+
+
+# Input
+```{r}
+
+taiaroa_rc <- read_delim("inputs/read_coordinates/taiaroa_mapped_mapped_read_coordinates.txt", delim="\t")
+kim_rc <- read_delim("inputs/read_coordinates/kim_mapped_mapped_read_coordinates.txt", delim="\t")
+davidson_rc <- read_delim("inputs/read_coordinates/davidson_mapped_mapped_read_coordinates.txt", delim="\t")
+
+colnames(taiaroa_rc) <- c("read_name", "five", "three", "start", "end")
+colnames(kim_rc) <- c("read_name", "five", "three", "start", "end")
+colnames(davidson_rc) <- c("read_name", "five", "three", "start", "end")
+```
+
+# Plot em
+```{r}
+
+
+# Lets try ORF1a junctions first.. ORF1a runs from 226-13483
+# Lets focus on the first main junction point: 1852 and 1989, second main point: 6960
+# These points are generally consistent across the three dRNAseq datasets
+
+kim_rc %>%
+  filter(five < 2000, five > 1500) %>%
+  ggplot() + 
+    geom_histogram(aes(x=five),
+                 binwidth = 1)
+
+
+
+
+taiaroa_rc %>%
+  filter(five < 13483, five > 266) %>%
+  group_by(five) %>%
+  tally() %>%
+  arrange(-n)
+
+kim_rc %>%
+  filter(five < 13483, five > 266) %>%
+  group_by(five) %>%
+  tally() %>%
+  arrange(-n)
+
+
+davidson_rc %>%
+  filter(five < 13483, five > 266) %>%
+  group_by(five) %>%
+  tally() %>%
+  arrange(-n)
+```
+
+
+
+# Plotting reads for a given span
+```{r}
+plot_read_spans <- function(in_tbl, start, end) {
+  formatted <- in_tbl %>%
+     mutate(before_read = start,
+     read_part1 = five - start,
+     junction = three - read_part1 - before_read,
+     read_part2 = end - junction - read_part1 - before_read)
+  
+  # Filtering duplicated reads, and reads that don't contain most of the 3' end of the genome
+  formatted <- formatted %>%
+    filter(!read_name %in% formatted$read_name[duplicated(formatted$read_name)]) %>% # no double junction reads
+    filter(end > 29000) # no reads that don't have a full 3' end
+  
+  formatted.m <- formatted %>%
+    select(read_name, before_read, read_part1, junction, read_part2) %>%
+    melt()
+  
+  # Prepare the order of the columns
+  read_name_ordered <- formatted %>%
+    mutate(for_ordering = before_read + read_part1) %>%
+    arrange(-for_ordering) %>%
+    pull(read_name)
+  order <- match(formatted.m$read_name, read_name_ordered)
+  
+  # For ordering the stacked bars
+  levels = rev(c("before_read", "read_part1", "junction", "read_part2"))
+  
+  # Main Plot
+  span_plot <- formatted.m %>%
+    ggplot() +
+    geom_col(aes(x=reorder(read_name, order), y=value, fill=factor(variable, levels = levels, ordered=TRUE))) + 
+    coord_flip() + 
+    scale_fill_manual(values=c("#000000", "#FFFFFF", "#000000", "#FFFFFF")) +
+    theme_minimal(base_size=20) +
+    theme(legend.position = "none",
+          axis.text.y = element_blank(),
+          axis.title.y = element_blank()) +
+    scale_y_continuous(expand=c(0,0)) + 
+    annotate("rect", xmin=1, xmax =nrow(formatted)-1, ymin = start, ymax=end, alpha=0.1, color="red", fill="white") + 
+    ylab("Nucleotide Position")
+
+
+  # Just ggenes
+  genome_plt <- ggplot() + 
+    geom_gene_arrow(data = sars2_ALL_genes, aes(xmin = start, xmax = end, y = 0, fill = gene, label=gene)) + 
+    scale_fill_manual(values=c("#7DCEA0", "#F6DDCC", "#BFC9CA", "#A93226", "#9B59B6", "#AED6F1", "#2471A3", "#48C9B0", "#1E8449", "#F7DC6F", "#AF601A" , "#5D6D7E")) +
+    scale_x_continuous(expand=c(0,0)) +
+    theme_minimal() + 
+    theme(axis.text.x = element_blank(),
+          axis.text.y = element_blank(),
+          axis.title.y = element_blank(),
+          panel.border = element_blank(),
+          panel.grid.major = element_blank(),
+          panel.grid.minor = element_blank(),
+          plot.margin = margin(0, 0, 0, 0, "cm"))
+  
+  # Combine em
+  genome_plt + span_plot + plot_layout(guides = "collect", heights=c(0.1, 1), ncol=1)
+
+}
+
+
+# ORF1a originating
+#-----------------------------------------------------------------------------------------------------#
+taiaroa_ORF1a_read_span_plt <- plot_read_spans(
+  taiaroa_rc %>% filter(five < 13483, five > 226),
+  226, 13483
+  )
+taiaroa_ORF1a_read_span_plt
+ggsave("figures/read_pileups/taiaroa_ORF1a_read_span_plt.pdf", taiaroa_ORF1a_read_span_plt, height = 10, width=9, units="cm")
+ggsave("figures/read_pileups/taiaroa_ORF1a_read_span_plt.svg", taiaroa_ORF1a_read_span_plt, height = 10, width=9, units="cm")
+saveRDS(taiaroa_ORF1a_read_span_plt, "rds/read_pileups/taiaroa_ORF1a_read_span_plt.rds")
+
+kim_ORF1a_read_span_plt <- plot_read_spans(
+  kim_rc %>% filter(five < 13483, five > 226),
+  226, 13483
+  )
+kim_ORF1a_read_span_plt
+ggsave("figures/read_pileups/kim_ORF1a_read_span_plt.pdf", kim_ORF1a_read_span_plt, height = 10, width=9, units="cm")
+ggsave("figures/read_pileups/kim_ORF1a_read_span_plt.svg", kim_ORF1a_read_span_plt, height = 10, width=9, units="cm")
+saveRDS(kim_ORF1a_read_span_plt, "rds/read_pileups/kim_ORF1a_read_span_plt.rds")
+
+davidson_ORF1a_read_span_plt <- plot_read_spans(
+  davidson_rc %>% filter(five < 13483, five > 226),
+  226, 13483
+  )
+davidson_ORF1a_read_span_plt
+ggsave("figures/read_pileups/davidson_ORF1a_read_span_plt.pdf", davidson_ORF1a_read_span_plt, height = 10, width=9, units="cm")
+ggsave("figures/read_pileups/davidson_ORF1a_read_span_plt.svg", davidson_ORF1a_read_span_plt, height = 10, width=9, units="cm")
+saveRDS(davidson_ORF1a_read_span_plt, "rds/read_pileups/davidson_ORF1a_read_span_plt.rds")
+
+# Spike - altered slightly to avoid canonical ORF3a junctions
+#-----------------------------------------------------------------------------------------------------#
+taiaroa_S_read_span_plt <- plot_read_spans(
+  taiaroa_rc %>% filter(three < 25370, three > 21580),
+  21580, 25370
+  )
+taiaroa_S_read_span_plt
+ggsave("figures/read_pileups/taiaroa_S_read_span_plt.pdf", taiaroa_S_read_span_plt, height = 10, width=9, units="cm")
+ggsave("figures/read_pileups/taiaroa_S_read_span_plt.svg", taiaroa_S_read_span_plt, height = 10, width=9, units="cm")
+saveRDS(taiaroa_S_read_span_plt, "rds/read_pileups/taiaroa_S_read_span_plt.rds")
+
+kim_S_read_span_plt <- plot_read_spans(
+  kim_rc %>% filter(three < 25370, three > 21580),
+  21580, 25370
+  )
+kim_S_read_span_plt
+ggsave("figures/read_pileups/kim_S_read_span_plt.pdf", kim_S_read_span_plt, height = 10, width=9, units="cm")
+ggsave("figures/read_pileups/kim_S_read_span_plt.svg", kim_S_read_span_plt, height = 10, width=9, units="cm")
+saveRDS(kim_S_read_span_plt, "rds/read_pileups/kim_S_read_span_plt.rds")
+
+davidson_S_read_span_plt <- plot_read_spans(
+  davidson_rc %>% filter(three < 25370, three > 21580),
+  21580, 25370
+  )
+davidson_S_read_span_plt
+ggsave("figures/read_pileups/davidson_S_read_span_plt.pdf", davidson_S_read_span_plt, height = 10, width=9, units="cm")
+ggsave("figures/read_pileups/davidson_S_read_span_plt.svg", davidson_S_read_span_plt, height = 10, width=9, units="cm")
+saveRDS(davidson_S_read_span_plt, "rds/read_pileups/davidson_S_read_span_plt.rds")
+
+
+
+# # N
+# #-----------------------------------------------------------------------------------------------------#
+# taiaroa_N_read_span_plt <- plot_read_spans(
+#   taiaroa_rc %>% filter(three < 29533, three > 28274),
+#   28274, 29533
+#   )
+# taiaroa_N_read_span_plt
+# ggsave("figures/read_pileups/taiaroa_N_read_span_plt.pdf", taiaroa_N_read_span_plt, height = 10, width=15, units="cm")
+# ggsave("figures/read_pileups/taiaroa_N_read_span_plt.svg", taiaroa_N_read_span_plt, height = 10, width=15, units="cm")
+# saveRDS(taiaroa_N_read_span_plt, "rds/read_pileups/taiaroa_N_read_span_plt.rds")
+# 
+# kim_N_read_span_plt <- plot_read_spans(
+#   kim_rc %>% filter(three < 29533, three > 28274),
+#   28274, 29533
+#   )
+# kim_N_read_span_plt
+# ggsave("figures/read_pileups/kim_N_read_span_plt.pdf", kim_N_read_span_plt, height = 10, width=15, units="cm")
+# ggsave("figures/read_pileups/kim_N_read_span_plt.svg", kim_N_read_span_plt, height = 10, width=15, units="cm")
+# saveRDS(kim_N_read_span_plt, "rds/read_pileups/kim_N_read_span_plt.rds")
+# 
+# davidson_N_read_span_plt <- plot_read_spans(
+#   davidson_rc %>% filter(three < 29533, three > 28274),
+#   28274, 29533
+#   )
+# davidson_N_read_span_plt
+# ggsave("figures/read_pileups/davidson_N_read_span_plt.pdf", davidson_N_read_span_plt, height = 10, width=15, units="cm")
+# ggsave("figures/read_pileups/davidson_N_read_span_plt.svg", davidson_N_read_span_plt, height = 10, width=15, units="cm")
+# saveRDS(davidson_N_read_span_plt, "rds/read_pileups/davidson_N_read_span_plt.rds")
+```
+
+```{r}
+
+```
+
+
+
+
+# OLD/ RESERVED - this doesn't have methodology to write the red box
+```{r}
+
+plot_read_spans <- function(in_tbl) {
+  formatted <- in_tbl %>%
+     mutate(before_read = start,
+     read_part1 = five - start,
+     junction = three - read_part1 - before_read,
+     read_part2 = end - junction - read_part1 - before_read)
+  
+  # Filtering duplicated reads, and reads that don't contain most of the 3' end of the genome
+  formatted <- formatted %>%
+    filter(!read_name %in% formatted$read_name[duplicated(formatted$read_name)]) %>% # no double junction reads
+    filter(end > 29000) # no reads that don't have a full 3' end
+  
+  formatted.m <- formatted %>%
+    select(read_name, before_read, read_part1, junction, read_part2) %>%
+    melt()
+  
+  # Prepare the order of the columns
+  read_name_ordered <- formatted %>%
+    mutate(for_ordering = before_read + read_part1) %>%
+    arrange(-for_ordering) %>%
+    pull(read_name)
+  order <- match(formatted.m$read_name, read_name_ordered)
+  
+  # For ordering the stacked bars
+  levels = rev(c("before_read", "read_part1", "junction", "read_part2"))
+  
+  # Main Plot
+  span_plot <- formatted.m %>%
+    ggplot() +
+    geom_col(aes(x=reorder(read_name, order), y=value, fill=factor(variable, levels = levels, ordered=TRUE))) + 
+    coord_flip() + 
+    scale_fill_manual(values=c("#000000", "#FFFFFF", "#000000", "#FFFFFF")) +
+    theme_minimal(base_size=20) +
+    theme(legend.position = "none",
+          axis.text.y = element_blank(),
+          axis.title.y = element_blank()) +
+    scale_y_continuous(expand=c(0,0))
+
+
+  # Just ggenes
+  genome_plt <- ggplot() + 
+    geom_gene_arrow(data = sars2_ALL_genes, aes(xmin = start, xmax = end, y = 0, fill = gene, label=gene)) + 
+    scale_fill_manual(values=c("#7DCEA0", "#F6DDCC", "#BFC9CA", "#A93226", "#9B59B6", "#AED6F1", "#2471A3", "#48C9B0", "#1E8449", "#F7DC6F", "#AF601A" , "#5D6D7E")) +
+    scale_x_continuous(expand=c(0,0)) +
+    theme_minimal() + 
+    theme(axis.text.x = element_blank(),
+          axis.text.y = element_blank(),
+          axis.title.y = element_blank())
+  
+  # Combine em
+  genome_plt + span_plot + plot_layout(guides = "collect", heights=c(0.1, 1), ncol=1)
+
+}
+```
+

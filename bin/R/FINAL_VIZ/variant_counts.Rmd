@@ -1,0 +1,137 @@
+---
+title: "SARS-CoV-2: Visualization of long-read ORFs"
+output: html_notebook
+---
+
+# Load libraries
+```{r}
+library(tidyverse)
+library(scales) #allows use of "comma" to replace i.e. 1e6 with 1,000,000 during plotting
+
+library(pheatmap)
+library(patchwork) # allows composing/orienting plots
+library(RColorBrewer)
+```
+
+# Import data
+```{r}
+
+# Synthetic data
+#---------------------------------------------#
+# Variant counts and start sites
+taiaroa_var_counts <- read_delim("synthetic/output_dataframes/taiaroa_cannonical_vs_variant_counts_SYNTHETIC.tsv", delim="\t")
+kim_var_counts <- read_delim("synthetic/output_dataframes/kim_cannonical_vs_variant_counts_SYNTHETIC.tsv", delim="\t")
+davidson_var_counts <- read_delim("synthetic/output_dataframes/davidson_cannonical_vs_variant_counts_SYNTHETIC.tsv", delim="\t")
+
+taiaroa_var_startsites <- read_delim("synthetic/output_dataframes/taiaroa_cannonical_vs_variant_startsites_SYNTHETIC.tsv", delim="\t")
+kim_var_startsites <- read_delim("synthetic/output_dataframes/kim_cannonical_vs_variant_startsites_SYNTHETIC.tsv", delim="\t")
+davidson_var_startsites <- read_delim("synthetic/output_dataframes/davidson_cannonical_vs_variant_startsites_SYNTHETIC.tsv", delim="\t")
+
+
+```
+
+
+# Plot variant counts
+```{r}
+
+# Define Order
+orf_order <- c("ORF1a", "ORF1b", "S", "ORF3a", "E", "M", "ORF6", "ORF7a", "ORF7b", "ORF8", "N", "ORF10")
+
+# Function for plotting
+plot_variant_counts <- function(in_tbl, orf_order) {
+  # Add a column that details if the ORF is cannonical or variant
+  in_tbl <- in_tbl %>%
+    mutate(orf_type = ifelse(grepl("variant",ORF), "Variant", "Cannonical"))
+  
+  # Ditch the _variant - no longer needed..
+  in_tbl$ORF <- in_tbl$ORF %>% str_replace_all("_variant", "")
+  
+  # Need to get order for the ORFs that are present in davidson...
+  # This is because not all samples will have all variants and such.
+  orf_order <- orf_order[orf_order %in% in_tbl$ORF]
+  
+  # Find percentages canonical and variant
+  in_tbl <- in_tbl %>%
+    group_by(ORF) %>%
+    mutate(sum = sum(Counts)) %>%
+    mutate(percentage = Counts*100/sum) %>%
+    arrange(ORF)
+  
+  # Now, actually get the sample order for plotting
+  # Because of the coord flip in the plot, need to reverse the order.
+  in_tbl_order_percentages <- match(in_tbl$ORF, rev(orf_order))
+  in_tbl_order_counts <- match(in_tbl %>%
+    filter(orf_type == "Variant") %>%
+      pull(ORF), rev(orf_order))
+  
+  
+  # Plot 'em
+  variant_percentages_plt <- ggplot(in_tbl) +
+    geom_col(
+      aes(x=reorder(ORF, in_tbl_order_percentages), y=percentage, fill=orf_type)
+    ) +
+    coord_flip() +
+    theme_minimal(base_size = 12) +
+    scale_fill_manual(values = c("#2471A3", "#A93226")) +
+    scale_y_continuous(expand = c(0,0)) +
+    ylab("Percentage") + xlab("ORF") +
+    labs(fill = "ORF Type") +
+    theme(axis.text.x = element_text(angle = 90))
+  
+  counts_plt <- in_tbl %>%
+    filter(orf_type == "Variant") %>%  # because the sum column is consistent for both variant and canonical
+     ggplot() +
+       geom_col(
+         aes(x=reorder(ORF, in_tbl_order_counts), y=sum),
+         fill = "black"
+       ) +
+    coord_flip() +
+    theme_minimal(base_size = 12) +
+    theme(axis.title.y = element_blank(),
+          axis.ticks.y = element_blank(),
+          axis.text.y = element_blank(),
+          axis.text.x = element_text(angle = 90)) +
+    ylab("Count") +
+    scale_y_continuous(expand = c(0,0), labels=comma) +
+    labs(fill = "ORF Type")
+  
+  
+  variant_percentages_plt + 
+    counts_plt +
+    plot_layout(guides = "collect", widths=c(1, 0.5), ncol=2)
+}
+
+
+taiaroa_var_counts_plt <-plot_variant_counts(taiaroa_var_counts, orf_order)
+taiaroa_var_counts_plt
+saveRDS(taiaroa_var_counts_plt, "rds/taiaroa_var_counts_plt.rds")
+
+kim_var_counts_plt <-plot_variant_counts(kim_var_counts, orf_order)
+kim_var_counts_plt
+saveRDS(kim_var_counts_plt, "rds/kim_var_counts_plt.rds")
+
+davidson_var_counts_plt <-plot_variant_counts(davidson_var_counts, orf_order)
+davidson_var_counts_plt
+saveRDS(davidson_var_counts_plt, "rds/davidson_var_counts_plt.rds")
+
+
+var_counts_agg <- taiaroa_var_counts_plt[[1]] +
+  taiaroa_var_counts_plt[[2]] +
+  kim_var_counts_plt[[1]] +  theme(
+    axis.title.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.text.y = element_blank()
+    ) +
+  kim_var_counts_plt[[2]] +
+  davidson_var_counts_plt[[1]] + theme(
+    axis.title.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.text.y = element_blank()
+    ) +
+  davidson_var_counts_plt[[2]] +
+  plot_layout(guides = "collect", ncol=6 , widths = c(1, 0.5, 1, 0.5, 1, 0.5))
+var_counts_agg
+saveRDS(var_counts_agg, "rds/var_counts_agg.rds")
+
+
+```

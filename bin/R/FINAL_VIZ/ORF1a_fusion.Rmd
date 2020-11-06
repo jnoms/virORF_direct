@@ -1,0 +1,167 @@
+---
+title: "SARS-CoV-2: Visualization of long-read ORFs"
+output: html_notebook
+---
+
+# Load libraries
+```{r}
+library(tidyverse)
+library(scales) #allows use of "comma" to replace i.e. 1e6 with 1,000,000 during plotting
+
+library(pheatmap)
+library(patchwork) # allows composing/orienting plots
+library(RColorBrewer)
+```
+
+
+
+```{r}
+
+# Need to specify column types unless fusion_subject/_terminal are read in as logical type..
+
+taiaroa_subjects <- read_delim(
+  "synthetic/output_dataframes/taiaroa_subject_starts_and_ends_SYNTHETIC.tsv", 
+  col_types = cols(
+    query = col_character(),
+    subject = col_character(),
+    sstart = col_double(),
+    ssend = col_double(),
+    orf_type = col_character(),
+    fusion_subject = col_character(),
+    fusion_terminal = col_character()
+  ),
+  delim = "\t"
+)
+
+kim_subjects <- read_delim(
+  "synthetic/output_dataframes/kim_subject_starts_and_ends_SYNTHETIC.tsv", 
+  col_types = cols(
+    query = col_character(),
+    subject = col_character(),
+    sstart = col_double(),
+    ssend = col_double(),
+    orf_type = col_character(),
+    fusion_subject = col_character(),
+    fusion_terminal = col_character()
+  ),
+  delim = "\t"
+)
+
+davidson_subjects <- read_delim(
+  "synthetic/output_dataframes/davidson_subject_starts_and_ends_SYNTHETIC.tsv", 
+  col_types = cols(
+    query = col_character(),
+    subject = col_character(),
+    sstart = col_double(),
+    ssend = col_double(),
+    orf_type = col_character(),
+    fusion_subject = col_character(),
+    fusion_terminal = col_character()
+  ),
+  delim = "\t"
+)
+
+```
+
+
+# Plotting ORF1a fusions
+```{r}
+plot_fusions <- function(in_tbl, protein) {
+  # Filter the input dataframe for the desired protein
+  fusion <- 
+    in_tbl%>%filter(orf_type=="fusion", subject==protein)
+  
+  # Label the fusion protein as annotated or predicted
+  fusion <- fusion %>%
+    mutate(fusion_to_annotated_or_predicted = ifelse(grepl("NC", fusion_subject), "Predicted", "Annotated"))
+  
+  # Format the predicted ORFs
+  fusion$fusion_subject <- str_replace_all(fusion$fusion_subject, "NC_045512.2xxx", "") %>% str_replace_all(fixed("_+"), "")
+  
+  # Plot only the top 10 fusion subjects
+  top_10 <- fusion %>% group_by(fusion_subject) %>% summarize(freq = n()) %>% arrange(-freq) %>% head(10) %>% pull(fusion_subject)
+  fusion <- fusion %>%
+    filter(fusion_subject %in% top_10)
+  
+  # Define x axis order
+  cannonical_in_order <- c("ORF1a", "ORF1b", "S", "ORF3a", "E", "M", "ORF6", "ORF7a", "ORF7b", "ORF8", "N", "ORF10")
+  predicted_in_order <- unique(fusion$fusion_subject[order(nchar(fusion$fusion_subject), fusion$fusion_subject)])
+  predicted_in_order <- setdiff(predicted_in_order, cannonical_in_order)
+  order <- c(cannonical_in_order, predicted_in_order)
+  order <- order[order %in% fusion$fusion_subject]
+  order <- match(fusion$fusion_subject, rev(order))
+  
+  # Format the legned names
+  fusion$fusion_terminal <- fusion$fusion_terminal %>%
+    str_replace_all("C", "C Terminal Fusion") %>%
+    str_replace_all("N", "N Terminal Fusion") %>%
+    str_replace_all("both", "N and C Terminal Fusions") %>%
+    str_replace_all("self", "Internal Deletion")
+  
+  # Define legend order
+  fusion$fusion_terminal <- factor(fusion$fusion_terminal, levels = c("N Terminal Fusion", "C Terminal Fusion", "Internal Deletion", "Ambiguous", "N and C Terminal Fusions"))
+  
+  
+  ggplot(data=fusion, aes(x=reorder(fusion_subject, order))) +
+    geom_histogram(stat="count",
+                   aes(fill=fusion_terminal)) +
+    theme_minimal(base_size=20) +
+    coord_flip() +
+    #scale_color_manual(values = c("foo" = "#999999", "bar" = "#E69F00")) +
+    scale_fill_manual(values=c("N Terminal Fusion"="#A93226", "C Terminal Fusion"="#2471A3", "Internal Deletion"="#AED6F1", "Ambiguous"="#9B59B6", "N and C Terminal Fusions"="#48C9B0")) +
+    theme(legend.title=element_blank()) +
+    ylab("Count") + xlab("ORF1a Fusion Partner")
+  
+}
+
+taiaroa_fusion_orf1 <- plot_fusions(taiaroa_subjects, "ORF1a")
+taiaroa_fusion_orf1
+saveRDS(taiaroa_fusion_orf1, "rds/taiaroa_fusion_orf1.rds")
+
+kim_fusion_orf1 <- plot_fusions(kim_subjects, "ORF1a")
+kim_fusion_orf1
+saveRDS(kim_fusion_orf1, "rds/kim_fusion_orf1.rds")
+
+
+davidson_fusion_orf1 <- plot_fusions(davidson_subjects, "ORF1a")
+davidson_fusion_orf1
+saveRDS(davidson_fusion_orf1, "rds/davidson_fusion_orf1.rds")
+
+
+```
+
+# Arrange fusion graphs
+```{r}
+
+fusion_orf1a_arranged <- taiaroa_fusion_orf1 + 
+  kim_fusion_orf1 + theme(axis.title.y = element_blank()) +
+  davidson_fusion_orf1 + theme(axis.title.y = element_blank()) +
+  plot_layout(guides = 'collect') 
+
+ggsave("orf1a_ORFS_fusions.pdf", fusion_orf1a_arranged, height=10, width = 40, units="cm")
+ggsave("orf1a_ORFS_fusions.svg", fusion_orf1a_arranged, height=10, width = 40, units="cm")
+
+```
+
+
+```{r}
+# Getting the percentage of ORF1a that is *fusion*
+taiaroa_subjects %>%
+  group_by(subject, orf_type) %>%
+  filter(subject=="ORF1a") %>%
+  tally()
+# Taiaroa: 32%
+
+kim_subjects %>%
+  group_by(subject, orf_type) %>%
+  filter(subject=="ORF1a") %>%
+  tally()
+# Kim: 31%
+
+davidson_subjects %>%
+  group_by(subject, orf_type) %>%
+  filter(subject=="ORF1a") %>%
+  tally()
+# Davidson: 29%
+```
+

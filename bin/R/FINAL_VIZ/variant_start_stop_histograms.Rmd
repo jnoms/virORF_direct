@@ -1,0 +1,242 @@
+---
+title: "SARS-CoV-2: Visualization of long-read ORFs"
+output: html_notebook
+---
+
+# Load libraries
+```{r}
+library(tidyverse)
+library(scales) #allows use of "comma" to replace i.e. 1e6 with 1,000,000 during plotting
+
+library(pheatmap)
+library(patchwork) # allows composing/orienting plots
+library(RColorBrewer)
+```
+
+# Plotting histograms of variant start counts and such.
+# Important variant subject start and end locations
+```{r}
+
+# Need to specify column types unless fusion_subject/_terminal are read in as logical type..
+
+taiaroa_subjects <- read_delim(
+  "synthetic/output_dataframes/taiaroa_subject_starts_and_ends_SYNTHETIC.tsv", 
+  col_types = cols(
+    query = col_character(),
+    subject = col_character(),
+    sstart = col_double(),
+    ssend = col_double(),
+    orf_type = col_character(),
+    fusion_subject = col_character(),
+    fusion_terminal = col_character()
+  ),
+  delim = "\t"
+)
+
+kim_subjects <- read_delim(
+  "synthetic/output_dataframes/kim_subject_starts_and_ends_SYNTHETIC.tsv", 
+  col_types = cols(
+    query = col_character(),
+    subject = col_character(),
+    sstart = col_double(),
+    ssend = col_double(),
+    orf_type = col_character(),
+    fusion_subject = col_character(),
+    fusion_terminal = col_character()
+  ),
+  delim = "\t"
+)
+
+davidson_subjects <- read_delim(
+  "synthetic/output_dataframes/davidson_subject_starts_and_ends_SYNTHETIC.tsv", 
+  col_types = cols(
+    query = col_character(),
+    subject = col_character(),
+    sstart = col_double(),
+    ssend = col_double(),
+    orf_type = col_character(),
+    fusion_subject = col_character(),
+    fusion_terminal = col_character()
+  ),
+  delim = "\t"
+)
+
+```
+
+# Plotting variant start start and end site histograms
+```{r}
+# davidson_subjects %>%
+#   group_by(subject) %>%
+#   tally()
+
+
+# Function I'll be using for plotting...
+plot_variant_sites <- function(in_data, orf, binwidth) {
+  ggplot() +
+  
+  # Getting start site variants with constant end stie
+  geom_histogram(data=in_data%>%filter(subject==orf, orf_type!="cannonical"),
+                 aes(x=sstart, y= ..count.., fill="1. Start site of variants."),
+                 binwidth = binwidth) +
+  
+  geom_histogram(data=in_data%>%filter(subject==orf, orf_type!="cannonical"),
+                 aes(x=ssend, y= -..count.., fill="2. End site of variants."),
+                 binwidth = binwidth) +
+  scale_fill_manual(values = c("#1985a1", "#fe5f55"))+
+  theme_minimal(base_size=20) +
+  xlab("Position") + ylab("Count") +
+  geom_hline(yintercept = 0) +
+  theme(legend.title=element_blank())
+}
+
+
+# Taiaroa
+#---------------------------------------#
+taiaroa_variant_sites_plt_M <- plot_variant_sites(taiaroa_subjects, "M", 1)
+taiaroa_variant_sites_plt_M
+saveRDS(taiaroa_variant_sites_plt_M, "rds/taiaroa_variant_sites_plt_M.rds")
+
+taiaroa_variant_sites_plt_S <- plot_variant_sites(taiaroa_subjects, "S", 20)
+taiaroa_variant_sites_plt_S
+saveRDS(taiaroa_variant_sites_plt_S, "rds/taiaroa_variant_sites_plt_S.rds")
+
+
+taiaroa_variant_sites_plt_orf1a <- plot_variant_sites(taiaroa_subjects, "ORF1a", 50)
+taiaroa_variant_sites_plt_orf1a
+saveRDS(taiaroa_variant_sites_plt_orf1a, "rds/taiaroa_variant_sites_plt_orf1a.rds")
+
+
+# Kim
+#---------------------------------------#
+kim_variant_sites_plt_M <- plot_variant_sites(kim_subjects, "M", 1)
+kim_variant_sites_plt_M
+saveRDS(kim_variant_sites_plt_M, "rds/kim_variant_sites_plt_M.rds")
+
+
+kim_variant_sites_plt_S <- plot_variant_sites(kim_subjects, "S", 20)
+kim_variant_sites_plt_S
+saveRDS(kim_variant_sites_plt_S, "rds/kim_variant_sites_plt_S.rds")
+
+
+kim_variant_sites_plt_orf1a <- plot_variant_sites(kim_subjects, "ORF1a", 50)
+kim_variant_sites_plt_orf1a
+saveRDS(kim_variant_sites_plt_orf1a, "rds/kim_variant_sites_plt_orf1a.rds")
+
+
+# Davidson
+#---------------------------------------#
+davidson_variant_sites_plt_M <- plot_variant_sites(davidson_subjects, "M", 1)
+davidson_variant_sites_plt_M
+saveRDS(davidson_variant_sites_plt_M, "rds/davidson_variant_sites_plt_M.rds")
+
+
+davidson_variant_sites_plt_S <- plot_variant_sites(davidson_subjects, "S", 20)
+davidson_variant_sites_plt_S
+saveRDS(davidson_variant_sites_plt_S, "rds/davidson_variant_sites_plt_S.rds")
+
+
+davidson_variant_sites_plt_orf1a <- plot_variant_sites(davidson_subjects, "ORF1a", 50)
+davidson_variant_sites_plt_orf1a
+saveRDS(davidson_variant_sites_plt_orf1a, "rds/davidson_variant_sites_plt_orf1a.rds")
+
+
+
+```
+
+# Arranging variant start start and end site histograms
+```{r}
+
+M_arranged <- (taiaroa_variant_sites_plt_M + theme(axis.title.x=element_blank(), axis.text.x=element_blank(), axis.ticks.x=element_blank())) /
+              (kim_variant_sites_plt_M + theme(axis.title.x=element_blank(), axis.text.x=element_blank(), axis.ticks.x=element_blank())) / 
+              (davidson_variant_sites_plt_M) + 
+              plot_layout(guides = 'collect')
+
+S_arranged <- (taiaroa_variant_sites_plt_S + theme(axis.title.x=element_blank(), axis.text.x=element_blank(), axis.ticks.x=element_blank())) /
+              (kim_variant_sites_plt_S + theme(axis.title.x=element_blank(), axis.text.x=element_blank(), axis.ticks.x=element_blank())) / 
+              (davidson_variant_sites_plt_S) + 
+              plot_layout(guides = 'collect')
+
+orf1a_arranged <- (taiaroa_variant_sites_plt_orf1a + theme(axis.title.x=element_blank(), axis.text.x=element_blank(), axis.ticks.x=element_blank())) /
+              (kim_variant_sites_plt_orf1a + theme(axis.title.x=element_blank(), axis.text.x=element_blank(), axis.ticks.x=element_blank())) / 
+              (davidson_variant_sites_plt_orf1a) + 
+              plot_layout(guides = 'collect') 
+
+ggsave("figures/M_ORFs_variant_start_end.pdf", M_arranged)
+ggsave("figures/M_ORFs_variant_start_end.svg", M_arranged)
+
+ggsave("figures/S_ORFs_variant_start_end.pdf", S_arranged)
+ggsave("figures/S_ORFs_variant_start_end.svg", S_arranged)
+
+ggsave("figures/orf1a_ORFs_variant_start_end.pdf", orf1a_arranged)
+ggsave("figures/orf1a_ORFs_variant_start_end.svg", orf1a_arranged)
+
+
+
+```
+
+
+# Calculate percentage noncannonical for desired proteins
+# For later manual annotation in illustrator
+```{r}
+
+kim_subjects%>%
+    group_by(subject, orf_type) %>%
+    tally()
+
+get_percent_noncannonical <- function(in_tbl, protein){
+  filt <- in_tbl%>%
+    group_by(subject, orf_type) %>%
+    tally() %>%
+    filter(subject==protein)
+  
+  cannonical <- filt %>%
+    filter(orf_type == "cannonical") %>%
+    pull(n)
+  fusion <- filt %>%
+    filter(orf_type == "fusion") %>%
+    pull(n)
+  variant <- filt %>%
+    filter(orf_type == "variant") %>%
+    pull(n)
+  
+  # Check if cannonical is zero. Then, all are variant.
+  if (is.integer(cannonical) && length(cannonical) == 0L ) {
+     100
+  } else {
+  # Otherwise, return the percentage.
+    ((variant + fusion)/(cannonical + variant + fusion))*100
+  }
+  
+  
+}
+
+# M
+print("M")
+get_percent_noncannonical(taiaroa_subjects, "M")
+get_percent_noncannonical(kim_subjects, "M")
+get_percent_noncannonical(davidson_subjects, "M")
+print("")
+
+# ORF1a
+print("ORF1a")
+get_percent_noncannonical(taiaroa_subjects, "ORF1a")
+get_percent_noncannonical(kim_subjects, "ORF1a")
+get_percent_noncannonical(davidson_subjects, "ORF1a")
+print("")
+
+
+# S
+print("S")
+get_percent_noncannonical(taiaroa_subjects, "S")
+get_percent_noncannonical(kim_subjects, "S")
+get_percent_noncannonical(davidson_subjects, "S")
+print("")
+
+kim_subjects %>%
+  filter(subject=="S", orf_type!="cannonical") %>%
+  nrow()
+
+kim_subjects %>%
+  filter(subject=="S", orf_type=="cannonical") %>%
+  nrow()
+```

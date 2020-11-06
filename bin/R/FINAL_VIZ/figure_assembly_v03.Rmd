@@ -1,0 +1,356 @@
+---
+title: "SARS-CoV-2: Visualization of long-read junctions."
+---
+
+# Load libraries
+```{r}
+library(tidyverse)
+library(scales) #allows use of "comma" to replace i.e. 1e6 with 1,000,000 during plotting
+
+library(pheatmap)
+library(patchwork) # allows composing/orienting plots
+library(RColorBrewer)
+
+# geneplots
+library(gggenes)
+
+
+library(reshape2) #for melt function
+library(ggrepel) # labeling points on a dotplot
+
+library(hashmap) # use column as key for another column
+
+```
+
+# gggenes tibbles
+```{r}
+sars2_orf1a_gene <- tibble(
+  molecule = "SARS-CoV2_ORF1a",
+  gene = c("ORF1a", "ORF1b", "S"),
+  start = c(266, 13468, 21563),
+  end = c(13483, 21555, 25384),
+  strand = "forward",
+  direction = 1
+)
+
+sars2_genes <- tibble(
+  molecule = "SARS-CoV2",
+  gene = c("S", "ORF3a", "E", "M", "ORF6", "ORF7A", "ORF7B", "ORF8", "N", "ORF10"),
+  start = c(21563, 25393, 26245, 26523, 27202, 27394, 27756, 27894, 28274, 29558),
+  end = c(25384, 26220, 26472, 27191, 27387, 27759, 27887, 28259, 29533, 29674),
+  strand = "forward",
+  direction = 1
+)
+# Specify order of gene for plotting
+sars2_genes$gene <- factor(sars2_genes$gene, levels=c("S", "ORF3a", "E", "M", "ORF6", "ORF7A", "ORF7B", "ORF8", "N", "ORF10"), ordered = T)
+
+sars2_ALL_genes <- tibble(
+  molecule = "SARS-CoV2",
+  gene = c("ORF1a", "ORF1b","S", "ORF3a", "E", "M", "ORF6", "ORF7A", "ORF7B", "ORF8", "N", "ORF10"),
+  start = c(266, 13468, 21563, 25393, 26245, 26523, 27202, 27394, 27756, 27894, 28274, 29558),
+  end = c(13483, 21555,25384, 26220, 26472, 27191, 27387, 27759, 27887, 28259, 29533, 29674),
+  strand = "forward",
+  direction = 1
+)
+# Specify order of gene for plotting
+sars2_ALL_genes$gene <- factor(sars2_ALL_genes$gene, levels=c("ORF1a", "ORF1b", "S", "ORF3a", "E", "M", "ORF6", "ORF7A", "ORF7B", "ORF8", "N", "ORF10"), ordered = T)
+```
+
+# Helper functions
+```{r}
+remove_text_x <- function(in_plt) {
+  in_plt + theme(axis.title.x=element_blank(),
+                  axis.text.x=element_blank(),
+                  axis.ticks.x=element_blank())
+}
+
+remove_text_y <- function(in_plt) {
+  in_plt + theme(axis.title.y=element_blank(),
+                  axis.text.y=element_blank(),
+                  axis.ticks.y=element_blank())
+}
+
+
+remove_text_xy <- function(in_plt) {
+  in_plt + theme(axis.title.x=element_blank(),
+                  axis.text.x=element_blank(),
+                  axis.ticks.x=element_blank(),
+                 axis.title.y=element_blank(),
+                  axis.text.y=element_blank(),
+                  axis.ticks.y=element_blank())
+}
+
+
+remove_title_x  <- function(in_plt) {
+  in_plt + theme(axis.title.x=element_blank())
+}
+
+
+remove_title_y <- function(in_plt) {
+  in_plt + theme(axis.title.y=element_blank())
+}
+
+
+remove_title_xy <- function(in_plt) {
+  in_plt + theme(axis.title.x=element_blank(),
+                 axis.title.y=element_blank())
+}
+
+
+remove_text_x_title_y <- function(in_plt) {
+  in_plt + theme(axis.title.x=element_blank(),
+                  axis.text.x=element_blank(),
+                  axis.ticks.x=element_blank(),
+                 axis.title.y=element_blank())
+}
+
+
+remove_legend <- function(in_plt) {
+  in_plt + theme(legend.position = "none")
+}
+
+remove_legend_and_ytitle <- function(in_plt) {
+  in_plt + theme(legend.position = "none",
+                 axis.title.y=element_blank())
+}
+```
+
+
+# Figure 1 - "SARS-CoV-2 generates a defined popuilation of canonical subgenomic RNAs."
+```{r}
+taiaroa_global_plt <- readRDS("junctions/rds/global_junctions/taiaroa_global_plt.rds")
+kim_global_plt <- readRDS("junctions/rds/global_junctions/kim_global_plt.rds")
+davidson_global_plt <- readRDS("junctions/rds/global_junctions/davidson_global_plt.rds")
+
+taiaroa_3prime_plt <- readRDS("junctions/rds/canonical_3prime_junctions/taiaroa_3junctions_cannonical.rds")
+kim_3prime_plt <- readRDS("junctions/rds/canonical_3prime_junctions/kim_3junctions_cannonical.rds")
+davidson_3prime_plt <- readRDS("junctions/rds/canonical_3prime_junctions/davidson_3junctions_cannonical.rds")
+
+
+figure_1 <- taiaroa_global_plt + remove_title_y(kim_global_plt) + remove_title_y(davidson_global_plt) +
+  remove_legend(taiaroa_3prime_plt) + remove_legend_and_ytitle(kim_3prime_plt) +  remove_legend_and_ytitle(davidson_3prime_plt) +
+  plot_spacer() + plot_spacer() + plot_spacer() +
+  plot_layout(guides = 'collect')  +
+  plot_annotation(tag_levels="A")
+
+ggsave("assembled_figures/r/figure1.pdf", figure_1, height = 15, width=20, units="cm")
+ggsave("assembled_figures/r/figure1.svg", figure_1, height = 15, width=20, units="cm")
+```
+
+# Figure 2 - "Non-canonical junctions are consistent across multiple independent datasets"
+```{r}
+
+percentage_noncanonical_plt <- readRDS("junctions/rds/global_junctions/dRNAseq_classifications_plt.rds") +
+  theme_minimal(base_size=10) +
+  theme(axis.text.x = element_text(angle = 90)) +
+  ylab("Percentage of Junctions\nThat Are Non-canonical")
+
+
+DSG5_volcano <- readRDS("junctions/rds/dataset_specific_junctions/DSG5_volcano.rds") + ylab("Percentage of Non-Canonical\nJunctions") + theme_minimal(base_size=11)
+DSG3_volcano <- readRDS("junctions/rds/dataset_specific_junctions/DSG3_volcano.rds") + ylab("Percentage of Non-Canonical\nJunctions") + theme_minimal(base_size=11)
+
+
+figure_2 <- percentage_noncanonical_plt + plot_spacer() + DSG5_volcano + remove_title_y(DSG3_volcano) + 
+  plot_layout(guides = 'collect')
+
+ggsave("assembled_figures/r/figure2.pdf", figure_2, height = 15, width=23, units="cm")
+ggsave("assembled_figures/r/figure2.svg", figure_2, height = 15, width=23, units="cm")
+ggsave("assembled_figures/r/figure2.png", figure_2, height = 15, width=23, units="cm")
+
+```
+
+# Figure 3 - "Non-canonical junctions accumulate over time in-vitro"
+```{r}
+finkel_time_percentages_plt <- readRDS("junctions/rds/junctions_over_time/finkel_time_percentages_plt.rds")
+finkel_time_percentages_plt_zoom <- readRDS("junctions/rds/junctions_over_time/finkel_time_percentages_plt_zoom.rds")
+
+emanual_total_time_percentages_plt <- readRDS("junctions/rds/junctions_over_time/emanual_total_time_percentages_plt.rds")
+emanual_total_time_percentages_zoom_plt <- readRDS("junctions/rds/junctions_over_time/emanual_total_time_percentages_zoom_plt.rds")
+
+finkel_merged_timepoints_classwise_plt <- readRDS("junctions/rds/junctions_over_time/finkel_merged_timepoints_classwise_plt.rds")
+emanual_total_merged_timepoints_classwise_plt <- readRDS("junctions/rds/junctions_over_time/emanual_total_merged_timepoints_classwise_plt.rds")
+
+
+figure_3 <- remove_text_x(finkel_time_percentages_plt) + remove_text_xy(emanual_total_time_percentages_plt) +
+  remove_title_y(finkel_time_percentages_plt_zoom) + remove_text_y(emanual_total_time_percentages_zoom_plt) +
+  finkel_merged_timepoints_classwise_plt + remove_text_y(emanual_total_merged_timepoints_classwise_plt) +
+  plot_layout(guides = 'collect', nrow=3) 
+
+ggsave("assembled_figures/r/figure_3.pdf", figure_3 + plot_annotation(tag_levels="A"), height = 15, width=20, units="cm" )
+ggsave("assembled_figures/r/figure_3.svg", figure_3 + plot_annotation(tag_levels="A"), height = 15, width=20, units="cm" )
+ggsave("assembled_figures/r/figure_3.png", figure_3, height = 15, width=20, units="cm" )
+
+
+```
+
+
+# Figure 4- "Non-canonical junctions are not driven by TRS-like homology
+```{r}
+
+taiaroa_trs_most_common_homology <- readRDS("TRS/rds/taiaroa_trs_most_common_homology.rds") + theme_minimal(base_size=10) + ggtitle("Taiaroa")
+kim_trs_most_common_homology <- readRDS("TRS/rds/kim_trs_most_common_homology.rds") + theme_minimal(base_size=10) + ggtitle("Kim")
+davidson_trs_most_common_homology <- readRDS("TRS/rds/davidson_trs_most_common_homology.rds") + theme_minimal(base_size=10) + ggtitle("Davidson")
+
+
+taiaroa_homoloogy_lengths_plt <- readRDS("TRS/rds/taiaroa_homology_lengths_plt.rds") + theme_minimal(base_size=11)
+kim_homoloogy_lengths_plt <- readRDS("TRS/rds/kim_homology_lengths_plt.rds") + theme_minimal(base_size=11)
+davidson_homoloogy_lengths_plt <- readRDS("TRS/rds/davidson_homology_lengths_plt.rds") + theme_minimal(base_size=11)
+
+
+figure_4 <- 
+  taiaroa_trs_most_common_homology + remove_text_y(kim_trs_most_common_homology) + remove_text_y(davidson_trs_most_common_homology) +
+  taiaroa_homoloogy_lengths_plt + remove_text_y(kim_homoloogy_lengths_plt) + remove_text_y(davidson_homoloogy_lengths_plt) +
+  plot_layout(guides = 'collect', nrow=2) +
+  plot_annotation(tag_levels="A")
+
+ggsave("assembled_figures/r/figure_4.pdf", figure_4, height = 15, width=20, units="cm")
+ggsave("assembled_figures/r/figure_4.svg", figure_4, height = 15, width=20, units="cm")
+```
+
+
+
+
+
+# Figure 5 - "There are subgenomic RNAs that include only the 5' end of ORF1a."
+```{r}
+
+taiaroa_ORF1a_cov_and_juncs_plt <- readRDS("junctions/rds/orf1a_coverage/taiaroa_ORF1a_cov_and_juncs_plt.rds") + ggtitle("Taiaroa (Vero)\ndRNAseq")
+kim_ORF1a_cov_and_juncs_plt <- readRDS("junctions/rds/orf1a_coverage/kim_ORF1a_cov_and_juncs_plt.rds") + ggtitle("Kim (Vero)\ndRNAseq")
+davidson_ORF1a_cov_and_juncs_plt <- readRDS("junctions/rds/orf1a_coverage/davidson_ORF1a_cov_and_juncs_plt.rds") + ggtitle("Davidson (Vero)\ndRNAseq")
+
+finkel_24hpi_1_ORF1a_cov_and_juncs_plt <- readRDS("junctions/rds/orf1a_coverage/finkel_24hpi_1_ORF1a_cov_and_juncs_plt.rds") +ggtitle("Finkel (Vero)\nIllumina PolyA")
+SRR11517741_ORF1a_cov_and_juncs <- readRDS("junctions/rds/orf1a_coverage/SRR11517741_ORF1a_cov_and_juncs.rds") + ggtitle("Blanco-Melo (A549)\nIllumina PolyA")
+ferret_ORF1a_cov_and_juncs_plt <- readRDS("junctions/rds/orf1a_coverage/ferret_ORF1a_cov_and_juncs_plt.rds") + ggtitle("Blanco-Melo (Ferret)\nIllumina PolyA")
+suzuki_bronchial_5dpi_1_ORF1a_cov_and_juncs_plt <- readRDS("junctions/rds/orf1a_coverage/suzuki_bronchial_5dpi_1_ORF1a_cov_and_juncs_plt.rds") + ggtitle("Suzuki (Organoid)\nIllumina PolyA")
+emanual_total_24hpi_1_ORF1a_cov_and_juncs_plt.rds <- readRDS("junctions/rds/orf1a_coverage/emanual_total_24hpi_1_ORF1a_cov_and_juncs_plt.rds") + ggtitle("Emanual (Calu3)\nIllumina Total")
+
+
+figure_5 <- remove_text_x(taiaroa_ORF1a_cov_and_juncs_plt) + remove_text_x_title_y(kim_ORF1a_cov_and_juncs_plt) + remove_text_x_title_y(davidson_ORF1a_cov_and_juncs_plt) +
+  remove_text_x(finkel_24hpi_1_ORF1a_cov_and_juncs_plt) + remove_text_x_title_y(SRR11517741_ORF1a_cov_and_juncs) + remove_title_y(ferret_ORF1a_cov_and_juncs_plt) +
+  suzuki_bronchial_5dpi_1_ORF1a_cov_and_juncs_plt + remove_title_y(emanual_total_24hpi_1_ORF1a_cov_and_juncs_plt.rds) + plot_spacer() +
+  plot_layout(guides = 'collect') +
+  plot_annotation(tag_levels="A")
+  
+ggsave("assembled_figures/r/figure_5.pdf", figure_5, height = 15, width=20, units="cm" )
+ggsave("assembled_figures/r/figure_5.svg", figure_5, height = 15, width=20, units="cm" )
+```
+
+# Figure 6 - "Non-canonical junctions have the potential to generate variant open reading frames."
+```{r}
+taiaroa_var_counts_plt <- readRDS("ORFs/rds/taiaroa_var_counts_plt.rds")[[1]] + theme_minimal(base_size=10) + ggtitle("Taiaroa")
+kim_var_counts_plt <- readRDS("ORFs/rds/kim_var_counts_plt.rds")[[1]] + theme_minimal(base_size=10) + ggtitle("Kim")
+davidson_var_counts_plt <- readRDS("ORFs/rds/davidson_var_counts_plt.rds")[[1]] + theme_minimal(base_size=10) + ggtitle("Davidson")
+
+taiaroa_variant_sites_plt_M <- readRDS("ORFs/rds/taiaroa_variant_sites_plt_M.rds") + theme_minimal(base_size=10)
+taiaroa_variant_sites_plt_S <- readRDS("ORFs/rds/taiaroa_variant_sites_plt_S.rds") + theme_minimal(base_size=10)
+taiaroa_variant_sites_plt_orf1a <- readRDS("ORFs/rds/taiaroa_variant_sites_plt_orf1a.rds") + theme_minimal(base_size=10)
+
+kim_variant_sites_plt_M <- readRDS("ORFs/rds/kim_variant_sites_plt_M.rds") + theme_minimal(base_size=10)
+kim_variant_sites_plt_S <- readRDS("ORFs/rds/kim_variant_sites_plt_S.rds") + theme_minimal(base_size=10)
+kim_variant_sites_plt_orf1a <- readRDS("ORFs/rds/kim_variant_sites_plt_orf1a.rds") + theme_minimal(base_size=10)
+
+davidson_variant_sites_plt_M <- readRDS("ORFs/rds/davidson_variant_sites_plt_M.rds") + theme_minimal(base_size=10)
+davidson_variant_sites_plt_S <- readRDS("ORFs/rds/davidson_variant_sites_plt_S.rds") + theme_minimal(base_size=10)
+davidson_variant_sites_plt_orf1a <- readRDS("ORFs/rds/davidson_variant_sites_plt_orf1a.rds") + theme_minimal(base_size=10)
+
+taiaroa_fusion_orf1 <- readRDS("ORFs/rds/taiaroa_fusion_orf1.rds") + theme_minimal(base_size=10) + ggtitle("Taiaroa")
+kim_fusion_orf1 <- readRDS("ORFs/rds/kim_fusion_orf1.rds") + theme_minimal(base_size=10) + ggtitle("Kim")
+davidson_fusion_orf1 <- readRDS("ORFs/rds/davidson_fusion_orf1.rds") + theme_minimal(base_size=10) + ggtitle("Davidson")
+
+
+figure_6 <- taiaroa_var_counts_plt + remove_text_y(kim_var_counts_plt) + remove_text_y(davidson_var_counts_plt) + 
+  taiaroa_variant_sites_plt_M  + remove_title_y(taiaroa_variant_sites_plt_S) + remove_title_y(taiaroa_variant_sites_plt_orf1a) +
+  kim_variant_sites_plt_M  + remove_title_y(kim_variant_sites_plt_S) + remove_title_y(kim_variant_sites_plt_orf1a) +
+  davidson_variant_sites_plt_M  + remove_title_y(davidson_variant_sites_plt_S) + remove_title_y(davidson_variant_sites_plt_orf1a) +
+  taiaroa_fusion_orf1 + remove_text_y(kim_fusion_orf1) + remove_text_y(davidson_fusion_orf1) +
+  plot_layout(guides = 'collect', ncol=3) +
+  plot_annotation(tag_levels="A")
+
+ggsave("assembled_figures/r/figure_6.pdf", figure_6, height = 20, width=20, units="cm" )
+ggsave("assembled_figures/r/figure_6.svg", figure_6, height = 20, width=20, units="cm" )
+
+```
+
+# Supplementary figure 1 - "Non-canonical junctions are present in diverse datasets"
+```{r}
+finkel_24hpi_1_junc_global_plt <- readRDS("junctions/rds/global_junctions/finkel_24hpi_1_junc_global_plt.rds") + ggtitle("Finkel (Vero)\nIllumina PolyA")
+SRR11517741_global_plt <- readRDS("junctions/rds/global_junctions/SRR11517741_global_plt.rds") + ggtitle("Blanco-Melo (A549)\nIllumina PolyA")
+ferret_junc_global_plt <- readRDS("junctions/rds/global_junctions/ferret_junc_global_plt.rds") + ggtitle("Blanco-Melo (Ferret)\nIllumina PolyA")
+suzuki_bronchial_5dpi_1_junc_global_plt <- readRDS("junctions/rds/global_junctions/suzuki_bronchial_5dpi_1_junc_global_plt.rds") + ggtitle("Suzuki (Organoid)\nIllumina PolyA")
+emanual_total_24hpi_1_junc_global_plt <- readRDS("junctions/rds/global_junctions/emanual_total_24hpi_1_junc_global_plt.rds") + ggtitle("Emanual (Calu3)\nIllumina Total")
+
+classifications_ferret_suzuki_plt <- readRDS("junctions/rds/global_junctions/classifications_ferret_suzuki_plt.rds") + theme_minimal(base_size=10)
+
+Supplementary_figure_1 <- finkel_24hpi_1_junc_global_plt + remove_title_xy(SRR11517741_global_plt) + remove_title_y(ferret_junc_global_plt) +
+  suzuki_bronchial_5dpi_1_junc_global_plt + remove_title_y(emanual_total_24hpi_1_junc_global_plt) + classifications_ferret_suzuki_plt +
+  plot_layout(guides = 'collect') +
+  plot_annotation(tag_levels="A")
+ggsave("assembled_figures/r/Supplementary_figure_1.pdf", Supplementary_figure_1, height = 15, width=20, units="cm" )
+ggsave("assembled_figures/r/Supplementary_figure_1.svg", Supplementary_figure_1, height = 15, width=20, units="cm" )
+```
+
+# Supplementary Figure 2 - "The landscape of non-canonical junctions across transcriptomes is generally consistent."
+```{r}
+
+
+span5_zscore_dist <- readRDS("junctions/rds/dataset_specific_junctions/span5_zscore_dist_plt.rds") + ggtitle("5' Z-score Distribution")
+span3_zscore_dist <- readRDS("junctions/rds/dataset_specific_junctions/span3_zscore_dist_plt.rds") + ggtitle("3' Z-score Distribution")
+
+
+merged_5percentages_replicates_span_plt <-  readRDS("junctions/rds/dataset_specific_junctions/merged_5percentages_replicates_span_plt.rds") +
+  ylab("Percentage of Non-\nCanonical Junctions")
+merged_3percentages_replicates_span_plt <-  readRDS("junctions/rds/dataset_specific_junctions/merged_3percentages_replicates_span_plt.rds")+
+  ylab("Percentage of Non-\nCanonical Junctions")
+
+
+
+Supplementary_figure_2 <- span5_zscore_dist/span3_zscore_dist/merged_5percentages_replicates_span_plt/merged_3percentages_replicates_span_plt +
+  plot_annotation(tag_levels="A") +
+  plot_layout(heights=c(0.5, 0.5, 1, 1))
+
+
+
+ggsave("assembled_figures/r/Supplementary_figure_2.pdf", Supplementary_figure_2, height = 25, width=20, units="cm" )
+ggsave("assembled_figures/r/Supplementary_figure_2.svg", Supplementary_figure_2, height = 25, width=20, units="cm" )
+
+```
+
+
+
+# Supplementary Figure 3 - "Subgenomic RNAs containing noncanonical junctions are present in three independent dRNAseq datasets"
+# !! Patchwork doesn't want to assemble them - files might be too dense. Will manually assemble in illustrator.
+```{r}
+taiaroa_N_read_span_plt <- readRDS("junctions/rds/read_pileups/taiaroa_N_read_span_plt.rds")
+kim_N_read_span_plt <- readRDS("junctions/rds/read_pileups/kim_N_read_span_plt.rds")
+davidson_N_read_span_plt <- readRDS("junctions/rds/read_pileups/davidson_N_read_span_plt.rds")
+
+taiaroa_S_read_span_plt <- readRDS("junctions/rds/read_pileups/taiaroa_S_read_span_plt.rds")
+kim_S_read_span_plt <- readRDS("junctions/rds/read_pileups/kim_S_read_span_plt.rds")
+davidson_S_read_span_plt <- readRDS("junctions/rds/read_pileups/davidson_S_read_span_plt.rds")
+
+taiaroa_ORF1a_read_span_plt <- readRDS("junctions/rds/read_pileups/taiaroa_ORF1a_read_span_plt.rds")
+kim_ORF1a_read_span_plt <- readRDS("junctions/rds/read_pileups/kim_ORF1a_read_span_plt.rds")
+davidson_ORF1a_read_span_plt <- readRDS("junctions/rds/read_pileups/davidson_ORF1a_read_span_plt.rds")
+
+
+# remove_text_x(taiaroa_N_read_span_plt) + remove_text_x(kim_N_read_span_plt) + remove_text_x(davidson_N_read_span_plt) + 
+#   remove_text_x(taiaroa_S_read_span_plt) + remove_text_x(kim_S_read_span_plt) + remove_text_x(davidson_S_read_span_plt) + 
+#   taiaroa_ORF1a_read_span_plt + kim_ORF1a_read_span_plt + davidson_ORF1a_read_span_plt + 
+#   plot_layout(guides = 'collect') +
+#   plot_annotation(tag_levels="A")
+
+  
+```
+
+
+
+# Supplementary Figure 4 - "Excess ORF1a coverage is also present in CoV 229E"
+```{r}
+CoV_229E_cov_and_juncs_plt <- readRDS("junctions/rds/orf1a_coverage/CoV_229E_cov_and_juncs_plt.rds") + ggtitle("CoV 229E dRNAseq")
+Supplementary_figure_4 <- CoV_229E_cov_and_juncs_plt
+
+ggsave("assembled_figures/r/Supplementary_figure_4.pdf", Supplementary_figure_4, height = 5, width = 5)
+ggsave("assembled_figures/r/Supplementary_figure_4.svg", Supplementary_figure_4, height = 5, width = 5)
+
+```
+

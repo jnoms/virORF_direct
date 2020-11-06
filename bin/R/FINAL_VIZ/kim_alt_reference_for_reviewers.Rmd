@@ -1,0 +1,244 @@
+---
+title: "SARS-CoV-2: Visualization of long-read junctions."
+---
+
+# Load libraries
+```{r}
+library(tidyverse)
+library(scales) #allows use of "comma" to replace i.e. 1e6 with 1,000,000 during plotting
+
+library(pheatmap)
+library(patchwork) # allows composing/orienting plots
+library(RColorBrewer)
+
+# geneplots
+library(gggenes)
+
+
+library(reshape2) #for melt function
+library(ggrepel) # labeling points on a dotplot
+
+library(hashmap) # use column as key for another column
+
+```
+
+# gggenes tibbles
+```{r}
+sars2_orf1a_gene <- tibble(
+  molecule = "SARS-CoV2_ORF1a",
+  gene = c("ORF1a", "ORF1b", "S"),
+  start = c(266, 13468, 21563),
+  end = c(13483, 21555, 25384),
+  strand = "forward",
+  direction = 1
+)
+
+sars2_genes <- tibble(
+  molecule = "SARS-CoV2",
+  gene = c("S", "ORF3a", "E", "M", "ORF6", "ORF7A", "ORF7B", "ORF8", "N", "ORF10"),
+  start = c(21563, 25393, 26245, 26523, 27202, 27394, 27756, 27894, 28274, 29558),
+  end = c(25384, 26220, 26472, 27191, 27387, 27759, 27887, 28259, 29533, 29674),
+  strand = "forward",
+  direction = 1
+)
+# Specify order of gene for plotting
+sars2_genes$gene <- factor(sars2_genes$gene, levels=c("S", "ORF3a", "E", "M", "ORF6", "ORF7A", "ORF7B", "ORF8", "N", "ORF10"), ordered = T)
+
+sars2_ALL_genes <- tibble(
+  molecule = "SARS-CoV2",
+  gene = c("ORF1a", "ORF1b","S", "ORF3a", "E", "M", "ORF6", "ORF7A", "ORF7B", "ORF8", "N", "ORF10"),
+  start = c(266, 13468, 21563, 25393, 26245, 26523, 27202, 27394, 27756, 27894, 28274, 29558),
+  end = c(13483, 21555,25384, 26220, 26472, 27191, 27387, 27759, 27887, 28259, 29533, 29674),
+  strand = "forward",
+  direction = 1
+)
+# Specify order of gene for plotting
+sars2_ALL_genes$gene <- factor(sars2_ALL_genes$gene, levels=c("ORF1a", "ORF1b", "S", "ORF3a", "E", "M", "ORF6", "ORF7A", "ORF7B", "ORF8", "N", "ORF10"), ordered = T)
+```
+
+# IMPORT data
+```{r}
+kim_alt <- read_delim("inputs/kim_ALT_REF_MT007544/KIM_ALT_REF_MT007544.1.junctions.txt", delim="\t")
+colnames(kim_alt) <- c("read_name", "five", "three")
+
+
+kim_alt_cov <- read_delim("inputs/kim_ALT_REF_MT007544/KIM_ALT_REF_MT007544.1.cov", delim="\t", col_names=c("genome", "position", "coverage"))
+
+
+```
+
+
+# For classifying junctions
+```{r}
+# Make key for identifying TRS locations
+trs_locations <- tibble(
+  gene = c("S", "ORF3a", "E", "M", "ORF6", "ORF7a", "ORF8", "N"),
+  TRS = c(21555, 25384, 26236, 26472, 27040, 27387, 27887, 28259)
+)
+trs_map <- hashmap(trs_locations$gene, trs_locations$TRS)
+
+classify_nc_c <- function(in_tbl) {
+  in_tbl %>%
+  mutate(classification = ifelse(
+    five < 100 & three > trs_map[["S"]]-15 & three < trs_map[["S"]]+15,
+    "Canonical",
+    ""
+    )) %>%
+  mutate(classification = ifelse(
+    five < 100 & three > trs_map[["ORF3a"]]-15 & three < trs_map[["ORF3a"]]+15,
+    "Canonical",
+    classification
+    )) %>%
+  mutate(classification = ifelse(
+    five < 100 & three > trs_map[["E"]]-15 & three < trs_map[["E"]]+15,
+    "Canonical",
+    classification
+    )) %>%
+  mutate(classification = ifelse(
+    five < 100 & three > trs_map[["M"]]-15 & three < trs_map[["M"]]+15,
+    "Canonical",
+    classification
+    )) %>%
+  mutate(classification = ifelse(
+    five < 100 & three > trs_map[["ORF6"]]-15 & three < trs_map[["ORF6"]]+15,
+    "Canonical",
+    classification
+    )) %>%
+  mutate(classification = ifelse(
+    five < 100 & three > trs_map[["ORF7a"]]-15 & three < trs_map[["ORF7a"]]+15,
+    "Canonical",
+    classification
+    )) %>%
+  mutate(classification = ifelse(
+    five < 100 & three > trs_map[["ORF8"]]-15 & three < trs_map[["ORF8"]]+15,
+    "Canonical",
+    classification
+    )) %>%
+  mutate(classification = ifelse(
+    five < 100 & three > trs_map[["N"]]-15 & three < trs_map[["N"]]+15,
+    "Canonical",
+    classification
+    )) %>%
+  mutate(classification = ifelse(classification == "", "Non-canonical", classification)) %>%
+  mutate(classification = ifelse(
+    five < 49 | five > 89,
+    "Non-canonical",
+    classification
+    )) # This last one makes sure 5' is within 20bp of TRS-L
+}
+```
+
+
+# Global junctions
+```{r}
+plot_global_junctions <- function(in_tbl, lower=-500000, alpha=1) {
+  # This function plots the junctions as curves on top
+  # and density of five (blue) and three (red) prime
+  # junctions on bottom. The curves are only plotted
+  # if the curve's combination of 5' and 3' junction
+  # point is present more than 1 time.
+  
+  # The density is effectively representative of
+  # bins of size 100
+  
+  # Set the upper graph bound proportionally to the lower bound.
+  upper <- lower * -0.66
+  
+  # Filter junctions that only occur once - this is
+  # based on both 5' and 3' coordinates.
+  more_than_one_junc <- in_tbl %>%
+    group_by(five, three) %>%
+    tally() %>%
+    filter(n!=1)
+  
+  # Classify the junctions...
+  more_than_one_junc <- classify_nc_c(more_than_one_junc)
+  
+  ggplot() + 
+    geom_curve(data=more_than_one_junc %>% filter(classification=="Non-canonical"),
+               aes(x=five, y=0, xend=three, yend=0),
+               curvature = -0.5,
+               size=.1,
+               alpha=alpha,
+               color="black") +
+    geom_curve(data=more_than_one_junc %>% filter(classification!="Non-canonical"),
+               aes(x=five, y=0, xend=three, yend=0),
+               curvature = -0.5,
+               size=.1,
+               alpha=1,
+               color="red") +
+    scale_fill_manual(values=c("#7DCEA0", "#F6DDCC", "#BFC9CA", "#A93226", "#9B59B6", "#AED6F1", "#2471A3", "#48C9B0", "#1E8449", "#F7DC6F", "#AF601A" , "#5D6D7E")) +
+    scale_color_manual(values=c("#FF0000", "#000000")) + 
+    theme_minimal() +
+    geom_density(data=in_tbl,
+              aes(x=three, y= -..count..),
+              stat= "bin",
+              binwidth=100) +
+    geom_density(data=in_tbl,
+              aes(x=five, y= -..count..),
+              stat= "bin",
+              binwidth=100) +
+    ylab("Count") + xlab("Position") + 
+    geom_gene_arrow(data = sars2_ALL_genes, aes(xmin = start, xmax = end, y = upper, fill = gene, label=gene)) +
+    scale_y_continuous(limits=c(lower, upper), labels=comma)
+}
+
+
+kim_alt_global_plt <- plot_global_junctions(kim_alt, lower=-300000, alpha=0.3)
+kim_alt_global_plt
+```
+
+
+# ORF1a coverage
+```{r}
+# Make gene map including only ORF1a, 1b, and S
+sars2_orf1a_gene <- tibble(
+  molecule = "SARS-CoV2_ORF1a",
+  gene = c("ORF1a", "ORF1b", "S"),
+  start = c(266, 13468, 21563),
+  end = c(13483, 21555, 25384),
+  strand = "forward",
+  direction = 1
+)
+
+
+plot_coverage_and_juncs <- function(juncs, cov, arrow_height=200000, ymax=200000){
+  ggplot() +
+    stat_bin(data=juncs%>%filter(five>=240, five<=25384),
+                   aes(x=five, y=cumsum(..count..)),
+                   geom='line', 
+                   color="red") +
+    theme_minimal() + ylab("Count") + xlab("5'") +
+    geom_line(data=cov %>% filter(position<=25384),
+              aes(x=position, y=coverage)) +
+    geom_gene_arrow(data = sars2_orf1a_gene, aes(xmin = start, xmax = end, y = arrow_height, fill = gene, label=gene)) +
+    scale_fill_manual(values=c("#7DCEA0", "#F6DDCC", "#BFC9CA")) +
+    geom_vline(xintercept = c(226, 13468, 13483, 21555, 25384) , 
+                color = "black",
+                size=0.2,
+                alpha=0.8,
+                linetype="dashed") +
+  scale_y_continuous(labels=comma) +
+  coord_cartesian(ylim=c(1,ymax)) +
+    theme(axis.title.x = element_blank())
+}
+
+kim_alt_ORF1a_cov_and_juncs_plt <- plot_coverage_and_juncs(kim_alt, kim_alt_cov, 25000, 26000)
+kim_alt_ORF1a_cov_and_juncs_plt
+```
+
+# Assemble
+```{r}
+
+kim_global_plt <- readRDS("rds/global_junctions/kim_global_plt.rds")
+kim_ORF1A_plt <- readRDS("rds/orf1a_coverage/kim_ORF1a_cov_and_juncs_plt.rds")
+
+
+kim_ref_comparison_plt <- kim_global_plt + kim_ORF1A_plt + theme(legend.position="None") +
+  kim_alt_global_plt + kim_alt_ORF1a_cov_and_juncs_plt + theme(legend.position="None") +
+  plot_layout(guides = 'collect')
+
+
+ggsave("figures/KIM_REF_COMPARISON_for_reviewer/kim_ref_comparison_plt.pdf", kim_ref_comparison_plt)
+```
+

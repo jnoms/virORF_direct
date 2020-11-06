@@ -1,0 +1,443 @@
+---
+title: "SARS-CoV-2: Visualization of long-read junctions."
+---
+
+# Load libraries
+```{r}
+library(tidyverse)
+library(scales) #allows use of "comma" to replace i.e. 1e6 with 1,000,000 during plotting
+
+library(pheatmap)
+library(patchwork) # allows composing/orienting plots
+library(RColorBrewer)
+
+# geneplots
+library(gggenes)
+
+
+library(reshape2) #for melt function
+library(ggrepel) # labeling points on a dotplot
+
+library(hashmap) # use column as key for another column
+
+```
+
+# gggenes tibbles
+```{r}
+sars2_orf1a_gene <- tibble(
+  molecule = "SARS-CoV2_ORF1a",
+  gene = c("ORF1a", "ORF1b", "S"),
+  start = c(266, 13468, 21563),
+  end = c(13483, 21555, 25384),
+  strand = "forward",
+  direction = 1
+)
+
+sars2_genes <- tibble(
+  molecule = "SARS-CoV2",
+  gene = c("S", "ORF3a", "E", "M", "ORF6", "ORF7a", "ORF7b", "ORF8", "N", "ORF10"),
+  start = c(21563, 25393, 26245, 26523, 27202, 27394, 27756, 27894, 28274, 29558),
+  end = c(25384, 26220, 26472, 27191, 27387, 27759, 27887, 28259, 29533, 29674),
+  strand = "forward",
+  direction = 1
+)
+# Specify order of gene for plotting
+sars2_genes$gene <- factor(sars2_genes$gene, levels=c("S", "ORF3a", "E", "M", "ORF6", "ORF7A", "ORF7B", "ORF8", "N", "ORF10"), ordered = T)
+
+sars2_ALL_genes <- tibble(
+  molecule = "SARS-CoV2",
+  gene = c("ORF1a", "ORF1b","S", "ORF3a", "E", "M", "ORF6", "ORF7a", "ORF7b", "ORF8", "N", "ORF10"),
+  start = c(266, 13468, 21563, 25393, 26245, 26523, 27202, 27394, 27756, 27894, 28274, 29558),
+  end = c(13483, 21555,25384, 26220, 26472, 27191, 27387, 27759, 27887, 28259, 29533, 29674),
+  strand = "forward",
+  direction = 1
+)
+# Specify order of gene for plotting
+sars2_ALL_genes$gene <- factor(sars2_ALL_genes$gene, levels=c("ORF1a", "ORF1b", "S", "ORF3a", "E", "M", "ORF6", "ORF7A", "ORF7B", "ORF8", "N", "ORF10"), ordered = T)
+```
+
+# IMPORT dRNAseq (minimap2 mapped)
+```{r}
+taiaroa <- read_delim("inputs/taiaroa_mapped_junctions.tsv", delim="\t")
+kim <- read_delim("inputs/kim_mapped_junctions.tsv", delim="\t")
+davidson <- read_delim("inputs/davidson_mapped_junctions.tsv", delim="\t")
+
+colnames(taiaroa) <- c("read_name", "five", "three")
+colnames(kim) <- c("read_name", "five", "three")
+colnames(davidson) <- c("read_name", "five", "three")
+
+
+label_genes_by_3prime <- function(in_tbl) {
+  in_tbl %>%
+    mutate(gene = "Intergenic") %>%
+    mutate(gene = ifelse(three>=21563, ifelse(three<=25384,"1. S", "Intergenic" ), "Intergenic")) %>%
+    mutate(gene = ifelse(three>=25393, ifelse(three<=26220,"2. ORF3a", gene ), gene)) %>%
+    mutate(gene = ifelse(three>=26245, ifelse(three<=26472,"3. E", gene ), gene)) %>%
+    mutate(gene = ifelse(three>=26523, ifelse(three<=27191,"4. M", gene ), gene)) %>%
+    mutate(gene = ifelse(three>=27202, ifelse(three<=27387,"5. ORF6", gene ), gene)) %>%
+    mutate(gene = ifelse(three>=27394, ifelse(three<=27887,"6. ORF7a/b", gene ), gene)) %>%
+    mutate(gene = ifelse(three>=27894, ifelse(three<=28259,"7. ORF8", gene ), gene)) %>%
+    mutate(gene = ifelse(three>=28274, ifelse(three<=29533,"8. N", gene ), gene)) %>%
+    mutate(gene = ifelse(three>=29558, ifelse(three<=29674,"9. ORF10", gene ), gene))
+}
+
+
+
+# Label genes by their 3' junctions
+davidson <- label_genes_by_3prime(davidson)
+
+taiaroa <- label_genes_by_3prime(taiaroa) 
+
+kim <- label_genes_by_3prime(kim)
+
+
+# Calculate junction length for each
+davidson <- davidson %>%
+  mutate(junction_length=three-five)
+
+taiaroa <- taiaroa %>%
+  mutate(junction_length=three-five)
+
+kim <- kim %>%
+  mutate(junction_length=three-five)
+```
+
+# IMPORT Blanco-Melo short read data (minimap2 mapped)
+```{r}
+SRR11517741 <- read_delim("inputs/SRR11517741_junctions.txt", delim="\t")
+SRR11517742 <- read_delim("inputs/SRR11517742_junctions.txt", delim="\t")
+SRR11517743 <- read_delim("inputs/SRR11517743_junctions.txt", delim="\t")
+
+
+colnames(SRR11517741) <- c("read_name", "five", "three")
+colnames(SRR11517742) <- c("read_name", "five", "three")
+colnames(SRR11517743) <- c("read_name", "five", "three")
+
+SRR11517741 <- label_genes_by_3prime(SRR11517741)
+SRR11517742 <- label_genes_by_3prime(SRR11517742)
+SRR11517743 <- label_genes_by_3prime(SRR11517743)
+```
+
+# IMPORT Blanco-Melo ferret data (minimap2 mapped)
+```{r}
+#Importing
+ferret_cov <- read_delim("inputs/blanco_melo_ferret/SRR11517855_8_ferret.cov", delim="\t", col_names=c("genome", "position", "coverage"))
+ferret_junc <- read_delim("inputs/blanco_melo_ferret/SRR11517855_8_ferret.junctions.txt", delim="\t")
+colnames(ferret_junc) <- c("name", 'five', 'three')
+```
+
+
+# IMPORT Finkel 4hpi, 24hpi (STAR mapped)
+```{r}
+# Import
+finkel_5hpi_1_cov <- read_delim("inputs/finkel/mRNA5_1.cov", delim="\t", col_names=c("genome", "position", "coverage"))
+finkel_5hpi_2_cov <- read_delim("inputs/finkel/mRNA5_2.cov", delim="\t", col_names=c("genome", "position", "coverage"))
+finkel_24hpi_1_cov <- read_delim("inputs/finkel/mRNA24_1.cov", delim="\t", col_names=c("genome", "position", "coverage"))
+finkel_24hpi_2_cov <- read_delim("inputs/finkel/mRNA24_2.cov", delim="\t", col_names=c("genome", "position", "coverage"))
+
+
+finkel_5hpi_1_junc <- read_delim("inputs/finkel/mRNA5_1.junctions.txt", delim="\t")
+finkel_5hpi_2_junc <- read_delim("inputs/finkel/mRNA5_2.junctions.txt", delim="\t")
+finkel_24hpi_1_junc <- read_delim("inputs/finkel/mRNA24_1.junctions.txt", delim="\t")
+finkel_24hpi_2_junc <- read_delim("inputs/finkel/mRNA24_2.junctions.txt", delim="\t")
+colnames(finkel_5hpi_1_junc) <- c("name", 'five', 'three')
+colnames(finkel_5hpi_2_junc) <- c("name", 'five', 'three')
+colnames(finkel_24hpi_1_junc) <- c("name", 'five', 'three')
+colnames(finkel_24hpi_2_junc) <- c("name", 'five', 'three')
+```
+
+# IMPORT Emanuel 4hpi, 24hpi (STAR mapped)
+```{r}
+emanual_total_4hpi_1_cov <- read_delim("inputs/emanual_totalRNA/SRR11550047.cov", delim="\t", col_names=c("genome", "position", "coverage"))
+emanual_total_4hpi_2_cov <- read_delim("inputs/emanual_totalRNA/SRR11550048.cov", delim="\t", col_names=c("genome", "position", "coverage"))
+emanual_total_12hpi_1_cov <- read_delim("inputs/emanual_totalRNA/SRR11550043.cov", delim="\t", col_names=c("genome", "position", "coverage"))
+emanual_total_12hpi_2_cov <- read_delim("inputs/emanual_totalRNA/SRR11550044.cov", delim="\t", col_names=c("genome", "position", "coverage"))
+emanual_total_24hpi_1_cov <- read_delim("inputs/emanual_totalRNA/SRR11550045.cov", delim="\t", col_names=c("genome", "position", "coverage"))
+emanual_total_24hpi_2_cov <- read_delim("inputs/emanual_totalRNA/SRR11550046.cov", delim="\t", col_names=c("genome", "position", "coverage"))
+
+emanual_total_4hpi_1_junc <- read_delim("inputs/emanual_totalRNA/SRR11550047.junctions.txt", delim="\t")
+emanual_total_4hpi_2_junc <- read_delim("inputs/emanual_totalRNA/SRR11550048.junctions.txt", delim="\t")
+emanual_total_12hpi_1_junc <- read_delim("inputs/emanual_totalRNA/SRR11550043.junctions.txt", delim="\t")
+emanual_total_12hpi_2_junc <- read_delim("inputs/emanual_totalRNA/SRR11550044.junctions.txt", delim="\t")
+emanual_total_24hpi_1_junc <- read_delim("inputs/emanual_totalRNA/SRR11550045.junctions.txt", delim="\t")
+emanual_total_24hpi_2_junc <- read_delim("inputs/emanual_totalRNA/SRR11550046.junctions.txt", delim="\t")
+colnames(emanual_total_4hpi_1_junc) <- c("name", 'five', 'three')
+colnames(emanual_total_4hpi_2_junc) <- c("name", 'five', 'three')
+colnames(emanual_total_12hpi_1_junc) <- c("name", 'five', 'three')
+colnames(emanual_total_12hpi_2_junc) <- c("name", 'five', 'three')
+colnames(emanual_total_24hpi_1_junc) <- c("name", 'five', 'three')
+colnames(emanual_total_24hpi_2_junc) <- c("name", 'five', 'three')
+```
+# IMPORT Emmanual polyA timecourse (STAR mapped)
+```{r}
+
+```
+
+
+# IMPORT Suzuki organoids (minimap2 mapped)
+```{r}
+# Import
+suzuki_bronchial_5dpi_1_cov <- read_delim("inputs/suzuki_bronchial_organoids/minimap2/SRR11811022.cov", delim="\t", col_names=c("genome", "position", "coverage"))
+suzuki_bronchial_5dpi_2_cov <- read_delim("inputs/suzuki_bronchial_organoids/minimap2/SRR11811023.cov", delim="\t", col_names=c("genome", "position", "coverage"))
+suzuki_bronchial_5dpi_3_cov <- read_delim("inputs/suzuki_bronchial_organoids/minimap2/SRR11811024.cov", delim="\t", col_names=c("genome", "position", "coverage"))
+
+
+suzuki_bronchial_5dpi_1_junc <- read_delim("inputs/suzuki_bronchial_organoids/minimap2/SRR11811022.junctions.txt", delim="\t")
+suzuki_bronchial_5dpi_2_junc <- read_delim("inputs/suzuki_bronchial_organoids/minimap2/SRR11811023.junctions.txt", delim="\t")
+suzuki_bronchial_5dpi_3_junc <- read_delim("inputs/suzuki_bronchial_organoids/minimap2/SRR11811024.junctions.txt", delim="\t")
+
+colnames(suzuki_bronchial_5dpi_1_junc) <- c("name", 'five', 'three')
+colnames(suzuki_bronchial_5dpi_2_junc) <- c("name", 'five', 'three')
+colnames(suzuki_bronchial_5dpi_3_junc) <- c("name", 'five', 'three')
+```
+
+
+# For classifying junctions
+```{r}
+# Make key for identifying TRS locations
+trs_locations <- tibble(
+  gene = c("S", "ORF3a", "E", "M", "ORF6", "ORF7a", "ORF8", "N"),
+  TRS = c(21555, 25384, 26236, 26472, 27040, 27387, 27887, 28259)
+)
+trs_map <- hashmap(trs_locations$gene, trs_locations$TRS)
+
+classify_nc_c <- function(in_tbl) {
+  in_tbl %>%
+  mutate(classification = ifelse(
+    five < 100 & three > trs_map[["S"]]-15 & three < trs_map[["S"]]+15,
+    "Canonical",
+    ""
+    )) %>%
+  mutate(classification = ifelse(
+    five < 100 & three > trs_map[["ORF3a"]]-15 & three < trs_map[["ORF3a"]]+15,
+    "Canonical",
+    classification
+    )) %>%
+  mutate(classification = ifelse(
+    five < 100 & three > trs_map[["E"]]-15 & three < trs_map[["E"]]+15,
+    "Canonical",
+    classification
+    )) %>%
+  mutate(classification = ifelse(
+    five < 100 & three > trs_map[["M"]]-15 & three < trs_map[["M"]]+15,
+    "Canonical",
+    classification
+    )) %>%
+  mutate(classification = ifelse(
+    five < 100 & three > trs_map[["ORF6"]]-15 & three < trs_map[["ORF6"]]+15,
+    "Canonical",
+    classification
+    )) %>%
+  mutate(classification = ifelse(
+    five < 100 & three > trs_map[["ORF7a"]]-15 & three < trs_map[["ORF7a"]]+15,
+    "Canonical",
+    classification
+    )) %>%
+  mutate(classification = ifelse(
+    five < 100 & three > trs_map[["ORF8"]]-15 & three < trs_map[["ORF8"]]+15,
+    "Canonical",
+    classification
+    )) %>%
+  mutate(classification = ifelse(
+    five < 100 & three > trs_map[["N"]]-15 & three < trs_map[["N"]]+15,
+    "Canonical",
+    classification
+    )) %>%
+  mutate(classification = ifelse(classification == "", "Non-canonical", classification)) %>%
+  mutate(classification = ifelse(
+    five < 49 | five > 89,
+    "Non-canonical",
+    classification
+    )) # This last one makes sure 5' is within 20bp of TRS-L
+}
+```
+
+
+
+# Plotting global junctions of dRNAseq
+```{r}
+plot_global_junctions <- function(in_tbl, lower=-500000, alpha=1) {
+  # This function plots the junctions as curves on top
+  # and density of five (blue) and three (red) prime
+  # junctions on bottom. The curves are only plotted
+  # if the curve's combination of 5' and 3' junction
+  # point is present more than 1 time.
+  
+  # The density is effectively representative of
+  # bins of size 100
+  
+  # Set the upper graph bound proportionally to the lower bound.
+  upper <- lower * -0.66
+  
+  # Filter junctions that only occur once - this is
+  # based on both 5' and 3' coordinates.
+  more_than_one_junc <- in_tbl %>%
+    group_by(five, three) %>%
+    tally() %>%
+    filter(n!=1)
+  
+  # Classify the junctions...
+  more_than_one_junc <- classify_nc_c(more_than_one_junc)
+  
+  ggplot() + 
+    geom_curve(data=more_than_one_junc %>% filter(classification=="Non-canonical"),
+               aes(x=five, y=0, xend=three, yend=0),
+               curvature = -0.5,
+               size=.1,
+               alpha=alpha,
+               color="black") +
+    geom_curve(data=more_than_one_junc %>% filter(classification!="Non-canonical"),
+               aes(x=five, y=0, xend=three, yend=0),
+               curvature = -0.5,
+               size=.1,
+               alpha=1,
+               color="red") +
+    scale_fill_manual(values=c("#7DCEA0", "#F6DDCC", "#BFC9CA", "#A93226", "#9B59B6", "#AED6F1", "#2471A3", "#48C9B0", "#1E8449", "#F7DC6F", "#AF601A" , "#5D6D7E")) +
+    scale_color_manual(values=c("#FF0000", "#000000")) + 
+    theme_minimal() +
+    geom_density(data=in_tbl,
+              aes(x=three, y= -..count..),
+              stat= "bin",
+              binwidth=100) +
+    geom_density(data=in_tbl,
+              aes(x=five, y= -..count..),
+              stat= "bin",
+              binwidth=100) +
+    ylab("Count") + xlab("Position") + 
+    geom_gene_arrow(data = sars2_ALL_genes, aes(xmin = start, xmax = end, y = upper, fill = gene, label=gene)) +
+    scale_y_continuous(limits=c(lower, upper), labels=comma)
+}
+
+
+# dRNASeq
+#--------------------------------------------------------------------------------------------------#
+taiaroa_global_plt <- plot_global_junctions(taiaroa, lower=-45000, alpha=0.3)
+taiaroa_global_plt
+kim_global_plt <- plot_global_junctions(kim, lower=-300000, alpha=0.3)
+kim_global_plt
+davidson_global_plt <- plot_global_junctions(davidson, lower=-200000, alpha=0.3)
+davidson_global_plt
+
+saveRDS(taiaroa_global_plt, "rds/global_junctions/taiaroa_global_plt.rds")
+saveRDS(kim_global_plt, "rds/global_junctions/kim_global_plt.rds")
+saveRDS(davidson_global_plt, "rds/global_junctions/davidson_global_plt.rds")
+
+dRNAseq_agg <- taiaroa_global_plt + kim_global_plt + davidson_global_plt + plot_layout(guides = 'collect') 
+ggsave("figures/global_junctions/dRNAseq_agg.pdf", dRNAseq_agg, height =10, width=20, units="cm")
+
+# Illumina 
+#--------------------------------------------------------------------------------------------------#
+
+SRR11517741_global_plt <- plot_global_junctions(SRR11517741, lower=-300000, alpha=0.1)
+SRR11517741_global_plt
+
+finkel_24hpi_1_junc_global_plt <- plot_global_junctions(finkel_24hpi_1_junc, lower=-160000, alpha=0.1)
+finkel_24hpi_1_junc_global_plt
+
+
+emanual_total_24hpi_1_junc_global_plt <- plot_global_junctions(emanual_total_24hpi_1_junc, lower=-5000, alpha=0.3)
+emanual_total_24hpi_1_junc_global_plt
+
+ferret_junc_global_plt <- plot_global_junctions(ferret_junc, lower=-500, alpha=1)
+ferret_junc_global_plt
+
+suzuki_bronchial_5dpi_1_junc_global_plt <- plot_global_junctions(suzuki_bronchial_5dpi_1_junc, lower=-100, alpha=1)
+suzuki_bronchial_5dpi_1_junc_global_plt
+
+
+saveRDS(SRR11517741_global_plt, "rds/global_junctions/SRR11517741_global_plt.rds")
+saveRDS(finkel_24hpi_1_junc_global_plt, "rds/global_junctions/finkel_24hpi_1_junc_global_plt.rds")
+saveRDS(emanual_total_24hpi_1_junc_global_plt, "rds/global_junctions/emanual_total_24hpi_1_junc_global_plt.rds")
+saveRDS(ferret_junc_global_plt, "rds/global_junctions/ferret_junc_global_plt.rds")
+saveRDS(suzuki_bronchial_5dpi_1_junc_global_plt, "rds/global_junctions/suzuki_bronchial_5dpi_1_junc_global_plt.rds")
+```
+
+# Plot percentage of noncanonical junctions
+```{r}
+
+taiaroa_classifications <- classify_nc_c(taiaroa) %>%
+  group_by(classification) %>%
+  tally() %>%
+  mutate(p = n*100/sum(n))
+
+kim_classifications <- classify_nc_c(kim) %>%
+  group_by(classification) %>%
+  tally() %>%
+  mutate(p = n*100/sum(n))
+
+davidson_classifications <- classify_nc_c(davidson)%>%
+  group_by(classification) %>%
+  tally() %>%
+  mutate(p = n*100/sum(n))
+
+finkel_classifications <- classify_nc_c(finkel_24hpi_1_junc)%>%
+  group_by(classification) %>%
+  tally() %>%
+  mutate(p = n*100/sum(n))
+
+blanco_melo_classifications <- classify_nc_c(SRR11517741)%>%
+  group_by(classification) %>%
+  tally() %>%
+  mutate(p = n*100/sum(n))
+
+
+agg_classifications <- rbind(
+  taiaroa_classifications %>% mutate(name = "Taiaroa"),
+  kim_classifications %>% mutate(name = "Kim"),
+  davidson_classifications %>% mutate(name = "Davidson"),
+  finkel_classifications %>% mutate(name="Finkel"),
+  blanco_melo_classifications %>% mutate(name="Blanco-Melo")
+  )
+
+
+agg_classifications$name <- factor(agg_classifications$name, levels = c("Taiaroa", "Kim", "Davidson", "Finkel", "Blanco-Melo"), ordered=T)
+
+dRNAseq_classifications_plt <- agg_classifications %>%
+  filter(classification == "Non-canonical") %>%
+  ggplot() +
+    geom_col(aes(x=name, y=p), fill="black") +
+    theme_minimal(base_size=20) +
+    scale_y_continuous(limits=c(0, 100)) +
+    ylab("% Non-Canonical") +
+    xlab("Sample") +
+    geom_text(aes(x=name, y=p+15, label=round(p, 2)), size=2)
+
+dRNAseq_classifications_plt 
+saveRDS(dRNAseq_classifications_plt, "rds/global_junctions/dRNAseq_classifications_plt.rds")
+ggsave("figures/global_junctions/dRNAseq_classifications_plt.pdf", dRNAseq_classifications_plt, height = 10, width=20, units="cm")
+```
+
+# Make separate % non-canonical barcharts for ferret and organoid replicates
+```{r}
+ferret_classifications <- classify_nc_c(ferret_junc) %>%
+  group_by(classification) %>%
+  tally() %>%
+  mutate(p = n*100/sum(n))
+
+suzuki_bronchial_5dpi_1_classifications <- classify_nc_c(suzuki_bronchial_5dpi_1_junc) %>%
+  group_by(classification) %>%
+  tally() %>%
+  mutate(p = n*100/sum(n))
+
+ferret_suzuki_agg_classifications <- rbind(
+  ferret_classifications %>% mutate(name = "Blanco-Melo\n(Ferret)"),
+  suzuki_bronchial_5dpi_1_classifications %>% mutate(name = "Suzuki\n(Organoid)")
+)
+
+ferret_suzuki_agg_classifications$name <- factor(ferret_suzuki_agg_classifications$name, levels = c("Suzuki\n(Organoid)", "Blanco-Melo\n(Ferret)"), ordered=T)
+
+classifications_ferret_suzuki_plt <- ferret_suzuki_agg_classifications %>%
+  filter(classification == "Non-canonical") %>%
+  ggplot() +
+    geom_col(aes(x=name, y=p), fill="black") +
+    theme_minimal(base_size=20) +
+    scale_y_continuous(limits=c(0, 100)) +
+    ylab("% Non-Canonical") +
+    xlab("Sample") +
+    geom_text(aes(x=name, y=p+15, label=round(p, 2)), size=2)
+classifications_ferret_suzuki_plt 
+
+saveRDS(classifications_ferret_suzuki_plt, "rds/global_junctions/classifications_ferret_suzuki_plt.rds")
+ggsave("figures/global_junctions/classifications_ferret_suzuki_plt.pdf", classifications_ferret_suzuki_plt, height = 10, width=20, units="cm")
+```
+
